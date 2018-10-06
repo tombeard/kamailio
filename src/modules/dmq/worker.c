@@ -79,8 +79,12 @@ void worker_loop(int id)
 
 	worker = &workers[id];
 	for(;;) {
-		sleep_us(100);
-		while(job_queue_size(worker->queue) > 0) {
+		LM_DBG("dmq_worker [%d %d] getting lock\n", id, my_pid());
+		lock_get(&worker->lock);
+		LM_DBG("dmq_worker [%d %d] lock acquired\n", id, my_pid());
+		/* multiple lock_release calls might be performed, so remove
+		 * from queue until empty */
+		do {
 			/* fill the response with 0's */
 			memset(&peer_response, 0, sizeof(peer_response));
 			current_job = job_queue_pop(worker->queue);
@@ -132,7 +136,7 @@ void worker_loop(int id)
 				shm_free(current_job);
 				worker->jobs_processed++;
 			}
-		}
+		} while(job_queue_size(worker->queue) > 0);
 	}
 }
 
@@ -194,6 +198,7 @@ int add_dmq_job(struct sip_msg* msg, dmq_peer_t* peer)
 	if (job_queue_push(worker->queue, &new_job)<0) {
 		goto error;
 	}
+	lock_release(&worker->lock);
 	return 0;
 error:
 	if (cloned_msg!=NULL) {
@@ -208,6 +213,9 @@ error:
 void init_worker(dmq_worker_t* worker)
 {
 	memset(worker, 0, sizeof(*worker));
+	lock_init(&worker->lock);
+	// acquire the lock for the first time - so that dmq_worker_loop blocks
+	lock_get(&worker->lock);
 	worker->queue = alloc_job_queue();
 }
 
