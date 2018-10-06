@@ -17,7 +17,7 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *
- * 
+ *
  */
 
 
@@ -29,6 +29,7 @@
 #include "../../core/error.h"
 #include "../../core/mem/mem.h"
 #include "../../core/mod_fix.h"
+#include "../../core/kemi.h"
 
 #include "sdlookup.h"
 
@@ -65,9 +66,9 @@ db1_con_t* db_handle=0;   /* Database connection handle */
 
 /* Exported functions */
 static cmd_export_t cmds[] = {
-	{"sd_lookup", (cmd_function)sd_lookup, 1, fixup_spve_null, 0,
+	{"sd_lookup", (cmd_function)w_sd_lookup, 1, fixup_spve_null, 0,
 		REQUEST_ROUTE},
-	{"sd_lookup", (cmd_function)sd_lookup, 2, fixup_spve_spve, 0,
+	{"sd_lookup", (cmd_function)w_sd_lookup, 2, fixup_spve_spve, 0,
 		REQUEST_ROUTE},
 	{0, 0, 0, 0, 0, 0}
 };
@@ -89,18 +90,16 @@ static param_export_t params[] = {
 
 /* Module interface */
 struct module_exports exports = {
-	"speeddial", 
+	"speeddial",     /* module name */
 	DEFAULT_DLFLAGS, /* dlopen flags */
-	cmds,       /* Exported functions */
-	params,     /* Exported parameters */
-	0,          /* exported statistics */
-	0,          /* exported MI functions */
-	0,          /* exported pseudo-variables */
-	0,          /* extra processes */
-	mod_init,   /* module initialization function */
-	0,          /* response function */
-	destroy,    /* destroy function */
-	child_init  /* child initialization function */
+	cmds,            /* exported functions */
+	params,          /* exported parameters */
+	0,               /* exported RPC functions */
+	0,               /* exported pseudo-variables */
+	0,               /* response function */
+	mod_init,        /* module initialization function */
+	child_init,      /* child initialization function */
+	destroy          /* destroy function */
 };
 
 
@@ -128,7 +127,7 @@ static int child_init(int rank)
  */
 static int mod_init(void)
 {
-    /* Find a database module */
+	/* Find a database module */
 	if (db_bind_mod(&db_url, &db_funcs))
 	{
 		LM_ERR("failed to bind database module\n");
@@ -158,3 +157,39 @@ static void destroy(void)
 		db_funcs.close(db_handle);
 }
 
+/**
+ *
+ */
+static int ki_sd_lookup(sip_msg_t *msg, str *stable)
+{
+	return sd_lookup_owner(msg, stable, NULL);
+}
+
+/**
+ *
+ */
+/* clang-format off */
+static sr_kemi_t sr_kemi_speeddial_exports[] = {
+	{ str_init("speeddial"), str_init("lookup"),
+		SR_KEMIP_INT, ki_sd_lookup,
+		{ SR_KEMIP_STR, SR_KEMIP_NONE, SR_KEMIP_NONE,
+			SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE }
+	},
+	{ str_init("speeddial"), str_init("lookup_owner"),
+		SR_KEMIP_INT, sd_lookup_owner,
+		{ SR_KEMIP_STR, SR_KEMIP_STR, SR_KEMIP_NONE,
+			SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE }
+	},
+
+	{ {0, 0}, {0, 0}, 0, NULL, { 0, 0, 0, 0, 0, 0 } }
+};
+/* clang-format on */
+
+/**
+ *
+ */
+int mod_register(char *path, int *dlflags, void *p1, void *p2)
+{
+	sr_kemi_modules_add(sr_kemi_speeddial_exports);
+	return 0;
+}

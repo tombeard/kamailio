@@ -152,31 +152,31 @@ sl_api_t slb;
  */
 static cmd_export_t cmds[] = {
 	{"consume_credentials",    w_consume_credentials,                0,
-		0, REQUEST_ROUTE},
+		0, 0, REQUEST_ROUTE},
 	{"www_challenge",          (cmd_function)www_challenge,          2,
-		fixup_auth_challenge, REQUEST_ROUTE},
+		fixup_auth_challenge, 0, REQUEST_ROUTE | FAILURE_ROUTE | ONREPLY_ROUTE},
 	{"proxy_challenge",        (cmd_function)proxy_challenge,        2,
-		fixup_auth_challenge, REQUEST_ROUTE},
+		fixup_auth_challenge, 0, REQUEST_ROUTE | FAILURE_ROUTE | ONREPLY_ROUTE},
 	{"auth_challenge",         (cmd_function)w_auth_challenge,       2,
-		fixup_auth_challenge, REQUEST_ROUTE},
+		fixup_auth_challenge, 0, REQUEST_ROUTE | FAILURE_ROUTE | ONREPLY_ROUTE},
 	{"pv_www_authorize",       (cmd_function)pv_www_authenticate,    3,
-		fixup_pv_auth, REQUEST_ROUTE},
+		fixup_pv_auth, 0, REQUEST_ROUTE},
 	{"pv_www_authenticate",    (cmd_function)pv_www_authenticate,    3,
-		fixup_pv_auth, REQUEST_ROUTE},
+		fixup_pv_auth, 0, REQUEST_ROUTE},
 	{"pv_www_authenticate",    (cmd_function)pv_www_authenticate2,   4,
-		fixup_pv_auth, REQUEST_ROUTE},
+		fixup_pv_auth, 0, REQUEST_ROUTE},
 	{"pv_proxy_authorize",     (cmd_function)pv_proxy_authenticate,  3,
-		fixup_pv_auth, REQUEST_ROUTE},
+		fixup_pv_auth, 0, REQUEST_ROUTE},
 	{"pv_proxy_authenticate",  (cmd_function)pv_proxy_authenticate,  3,
-		fixup_pv_auth, REQUEST_ROUTE},
+		fixup_pv_auth, 0, REQUEST_ROUTE},
 	{"auth_get_www_authenticate",  (cmd_function)w_auth_get_www_authenticate,  3,
-		fixup_auth_get_www_authenticate, REQUEST_ROUTE},
+		fixup_auth_get_www_authenticate, 0, REQUEST_ROUTE},
 	{"has_credentials",        w_has_credentials,                    1,
-		fixup_spve_null, REQUEST_ROUTE},
+		fixup_spve_null, 0, REQUEST_ROUTE},
 	{"pv_auth_check",         (cmd_function)w_pv_auth_check,           4,
-		fixup_pv_auth_check, REQUEST_ROUTE},
+		fixup_pv_auth_check, 0, REQUEST_ROUTE},
 	{"bind_auth_s",           (cmd_function)bind_auth_s, 0, 0, 0        },
-	{0, 0, 0, 0, 0}
+	{0, 0, 0, 0, 0, 0}
 };
 
 
@@ -216,14 +216,15 @@ static param_export_t params[] = {
  */
 struct module_exports exports = {
 	"auth",
+	DEFAULT_DLFLAGS, /* dlopen flags */
 	cmds,
-	0,          /* RPC methods */
 	params,
-	mod_init,   /* module initialization function */
+	0,          /* RPC methods */
+        0,          /* pseudo-variables exports */
 	0,          /* response function */
-	destroy,    /* destroy function */
-	0,          /* oncancel function */
-	0           /* child initialization function */
+	mod_init,   /* module initialization function */
+	0,          /* child initialization function */
+	destroy     /* destroy function */
 };
 
 
@@ -444,32 +445,39 @@ int w_consume_credentials(struct sip_msg* msg, char* s1, char* s2)
 /**
  *
  */
+int ki_has_credentials(sip_msg_t *msg, str* srealm)
+{
+	hdr_field_t *hdr = NULL;
+	int ret;
+
+	ret = find_credentials(msg, srealm, HDR_PROXYAUTH_T, &hdr);
+	if(ret==0) {
+		LM_DBG("found www credentials with realm [%.*s]\n", srealm->len, srealm->s);
+		return 1;
+	}
+	ret = find_credentials(msg, srealm, HDR_AUTHORIZATION_T, &hdr);
+	if(ret==0) {
+		LM_DBG("found proxy credentials with realm [%.*s]\n", srealm->len, srealm->s);
+		return 1;
+	}
+
+	LM_DBG("no credentials with realm [%.*s]\n", srealm->len, srealm->s);
+	return -1;
+}
+
+/**
+ *
+ */
 int w_has_credentials(sip_msg_t *msg, char* realm, char* s2)
 {
 	str srealm  = {0, 0};
-	hdr_field_t *hdr = NULL;
-	int ret;
 
 	if (fixup_get_svalue(msg, (gparam_t*)realm, &srealm) < 0) {
 		LM_ERR("failed to get realm value\n");
 		return -1;
 	}
-
-	ret = find_credentials(msg, &srealm, HDR_PROXYAUTH_T, &hdr);
-	if(ret==0) {
-		LM_DBG("found www credentials with realm [%.*s]\n", srealm.len, srealm.s);
-		return 1;
-	}
-	ret = find_credentials(msg, &srealm, HDR_AUTHORIZATION_T, &hdr);
-	if(ret==0) {
-		LM_DBG("found proxy credentials with realm [%.*s]\n", srealm.len, srealm.s);
-		return 1;
-	}
-
-	LM_DBG("no credentials with realm [%.*s]\n", srealm.len, srealm.s);
-	return -1;
+	return ki_has_credentials(msg, &srealm);
 }
-
 /**
  * @brief do WWW-Digest authentication with password taken from cfg var
  */
@@ -478,7 +486,8 @@ int pv_authenticate(struct sip_msg *msg, str *realm, str *passwd,
 {
 	struct hdr_field* h;
 	auth_body_t* cred;
-	int ret;
+	auth_cfg_result_t ret;
+	auth_result_t rauth;
 	str hf = {0, 0};
 	avp_value_t val;
 	static char ha1[256];
@@ -538,8 +547,8 @@ int pv_authenticate(struct sip_msg *msg, str *realm, str *passwd,
 	}
 
 	/* Recalculate response, it must be same to authorize successfully */
-	ret = auth_check_response(&(cred->digest), method, ha1);
-	if(ret==AUTHENTICATED) {
+	rauth = auth_check_response(&(cred->digest), method, ha1);
+	if(rauth==AUTHENTICATED) {
 		ret = AUTH_OK;
 		switch(post_auth(msg, h, ha1)) {
 			case AUTHENTICATED:
@@ -549,7 +558,7 @@ int pv_authenticate(struct sip_msg *msg, str *realm, str *passwd,
 				break;
 		}
 	} else {
-		if(ret==NOT_AUTHENTICATED)
+		if(rauth==NOT_AUTHENTICATED)
 			ret = AUTH_INVALID_PASSWORD;
 		else
 			ret = AUTH_ERROR;
@@ -1219,6 +1228,11 @@ static sr_kemi_t sr_kemi_auth_exports[] = {
 		SR_KEMIP_INT, pv_auth_check,
 		{ SR_KEMIP_STR, SR_KEMIP_STR, SR_KEMIP_INT,
 			SR_KEMIP_INT, SR_KEMIP_NONE, SR_KEMIP_NONE }
+	},
+	{ str_init("auth"), str_init("has_credentials"),
+		SR_KEMIP_INT, ki_has_credentials,
+		{ SR_KEMIP_STR, SR_KEMIP_NONE, SR_KEMIP_NONE,
+			SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE }
 	},
 
 	{ {0, 0}, {0, 0}, 0, NULL, { 0, 0, 0, 0, 0, 0 } }

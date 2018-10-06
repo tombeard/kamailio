@@ -9,9 +9,7 @@ include ../../Makefile.defs
 auto_gen=
 NAME=dispatcher.so
 
-LIBS=
-
-DEFS+=-DKAMAILIO_MOD_INTERFACE
+LIBS=-lm
 
 SERLIBPATH=../../lib
 SER_LIBS+=$(SERLIBPATH)/srdb1/srdb1

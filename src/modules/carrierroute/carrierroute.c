@@ -145,18 +145,16 @@ static mi_export_t mi_cmds[] = {
 static rpc_export_t rpc_methods[];
 
 struct module_exports exports = {
-	"carrierroute",
+	"carrierroute",  /* module name */
 	DEFAULT_DLFLAGS, /* dlopen flags */
-	cmds,       /* Exported functions */
-	params,     /* Export parameters */
-	0,          /* exported statistics */
-	0,          /* exported MI functions */
-	0,          /* exported pseudo-variables */
-	0,          /* extra processes */
-	mod_init,   /* Module initialization function */
-	0,          /* Response function */
-	mod_destroy,/* Destroy function */
-	child_init  /* Child initialization function */
+	cmds,            /* Exported functions */
+	params,          /* Export parameters */
+	0,               /* RPC method exports */
+	0,               /* exported pseudo-variables */
+	0,               /* Response function */
+	mod_init,        /* Module initialization function */
+	child_init,      /* Child initialization function */
+	mod_destroy      /* Destroy function */
 };
 
 
@@ -230,8 +228,8 @@ static int mod_init(void) {
 		}
 
 		if( !( fs.st_mode & S_IWOTH) &&
-			!((fs.st_mode & S_IWGRP) && (fs.st_gid == uid)) &&
-			!((fs.st_mode & S_IWUSR) && (fs.st_uid == gid))) {
+			!((fs.st_mode & S_IWGRP) && (fs.st_gid == gid)) &&
+			!((fs.st_mode & S_IWUSR) && (fs.st_uid == uid))) {
 				LM_ERR("config file %s not writable\n", config_file);
 				return -1;
 		}

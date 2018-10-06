@@ -169,7 +169,9 @@ char* get_hdr_field(char* const buf, char* const end, struct hdr_field* const hd
 			hdr->body.len=tmp-hdr->body.s;
 			DBG("<%.*s> [%d]; uri=[%.*s]\n", hdr->name.len, ZSW(hdr->name.s),
 					hdr->body.len, to_b->uri.len, ZSW(to_b->uri.s));
-			DBG("to body [%.*s]\n", to_b->body.len, ZSW(to_b->body.s));
+			DBG("to body [%.*s], to tag [%.*s]\n", to_b->body.len,
+					ZSW(to_b->body.s), to_b->tag_value.len,
+					ZSW(to_b->tag_value.s));
 			break;
 		case HDR_CONTENTLENGTH_T:
 			hdr->body.s=tmp;
@@ -251,8 +253,10 @@ char* get_hdr_field(char* const buf, char* const end, struct hdr_field* const hd
 				match=q_memchr(tmp, '\n', end-tmp);
 				if (match){
 					match++;
-				}else {
-					ERR("bad body for <%s>(%d)\n", hdr->name.s, hdr->type);
+				} else {
+					ERR("no eol - bad body for <%.*s> (hdr type: %d) [%.*s]\n",
+							 hdr->name.len, hdr->name.s,
+							hdr->type, ((end-tmp)>128)?128:(int)(end-tmp), tmp);
 					/* abort(); */
 					tmp=end;
 					goto error;
@@ -263,7 +267,8 @@ char* get_hdr_field(char* const buf, char* const end, struct hdr_field* const hd
 			hdr->body.len=match-hdr->body.s;
 			break;
 		default:
-			BUG("unknown header type %d\n", hdr->type);
+			BUG("unknown header type %d [%.*s]\n", hdr->type,
+					 ((end-buf)>128)?128:(int)(end-buf), buf);
 			goto error;
 	}
 	/* jku: if \r covered by current length, shrink it */
@@ -328,7 +333,8 @@ int parse_headers(struct sip_msg* const msg, const hdr_flags_t flags, const int 
 		rest=get_hdr_field(tmp, end, hf);
 		switch (hf->type){
 			case HDR_ERROR_T:
-				ERR("bad header field [%.*s]\n", (end-tmp>20)?20:(int)(end-tmp), tmp);
+				ERR("bad header field [%.*s]\n",
+						(end-tmp>100)?100:(int)(end-tmp), tmp);
 				goto  error;
 			case HDR_EOH_T:
 				msg->eoh=tmp; /* or rest?*/
@@ -799,13 +805,11 @@ int set_path_vector(struct sip_msg* msg, str* path)
 
 void reset_path_vector(struct sip_msg* const msg)
 {
-	/* only free path vector from pkg IFF it is still in pkg... - ie. if msg is shm we don't free... */
-	if (!(msg->msg_flags&FL_SHM_CLONE)) {
-		if (msg->path_vec.s)
-			pkg_free(msg->path_vec.s);
-		msg->path_vec.s = 0;
-		msg->path_vec.len = 0;
+	if (msg->path_vec.s) {
+		pkg_free(msg->path_vec.s);
 	}
+	msg->path_vec.s = 0;
+	msg->path_vec.len = 0;
 }
 
 
@@ -964,7 +968,7 @@ hdr_field_t* get_hdr_by_name(const sip_msg_t* const msg, const char* const name,
 
 	for(hdr = msg->headers; hdr; hdr = hdr->next) {
 		if(hdr->name.len == name_len && *hdr->name.s==*name
-				&& strncmp(hdr->name.s, name, name_len)==0)
+				&& strncasecmp(hdr->name.s, name, name_len)==0)
 			return hdr;
 	}
 	return NULL;
@@ -977,7 +981,7 @@ hdr_field_t* next_sibling_hdr_by_name(const hdr_field_t* const hf)
 
 	for(hdr = hf->next; hdr; hdr = hdr->next) {
 		if(hdr->name.len == hf->name.len && *hdr->name.s==*hf->name.s
-				&& strncmp(hdr->name.s, hf->name.s, hf->name.len)==0)
+				&& strncasecmp(hdr->name.s, hf->name.s, hf->name.len)==0)
 			return hdr;
 	}
 	return NULL;
@@ -1103,6 +1107,161 @@ int get_src_uri(sip_msg_t *m, int tmode, str *uri)
 
 	return 0;
 }
+
+/**
+ * get source proto:ip:port (socket address format)
+ */
+int get_src_address_socket(sip_msg_t *m, str *ssock)
+{
+	static char buf[MAX_URI_SIZE];
+	char* p;
+	str ip, port;
+	int len;
+	str proto;
+
+	if (!ssock || !m) {
+		ERR("invalid parameter value\n");
+		return -1;
+	}
+
+	if(get_valid_proto_string(m->rcv.proto, 1, 0, &proto)<0) {
+		ERR("unknown transport protocol\n");
+		return -1;
+	}
+
+	ip.s = ip_addr2a(&m->rcv.src_ip);
+	ip.len = strlen(ip.s);
+
+	port.s = int2str(m->rcv.src_port, &port.len);
+
+	len = proto.len + 1 + ip.len + 2*(m->rcv.src_ip.af==AF_INET6)+ 1 + port.len;
+
+	if (len+1 >= MAX_URI_SIZE) {
+		ERR("buffer too small\n");
+		return -1;
+	}
+
+	p = buf;
+
+	memcpy(p, proto.s, proto.len);
+	p += proto.len;
+
+	*p++ = ':';
+
+	if (m->rcv.src_ip.af==AF_INET6)
+		*p++ = '[';
+	memcpy(p, ip.s, ip.len);
+	p += ip.len;
+	if (m->rcv.src_ip.af==AF_INET6)
+		*p++ = ']';
+
+	*p++ = ':';
+
+	memcpy(p, port.s, port.len);
+	p += port.len;
+	*p = '\0';
+
+	ssock->s = buf;
+	ssock->len = len;
+
+	return 0;
+}
+
+/**
+ * get received-on-socket ip, port and protocol in SIP URI format
+ * - tmode - 0: short format (transport=udp is not added, being default)
+ * - atype - 0: listen address; 1: advertised address
+ */
+int get_rcv_socket_uri(sip_msg_t *m, int tmode, str *uri, int atype)
+{
+	static char buf[MAX_URI_SIZE];
+	char* p;
+	str ip, port;
+	int len;
+	str proto;
+
+	if (!uri || !m || !m->rcv.bind_address) {
+		ERR("invalid parameter value\n");
+		return -1;
+	}
+
+	if(tmode==0) {
+		switch(m->rcv.proto) {
+			case PROTO_NONE:
+			case PROTO_UDP:
+				proto.s = 0; /* Do not add transport parameter, UDP is default */
+				proto.len = 0;
+			break;
+			default:
+				if(get_valid_proto_string(m->rcv.proto, 1, 0, &proto)<0) {
+					ERR("unknown transport protocol\n");
+					return -1;
+				}
+		}
+	} else {
+		if(get_valid_proto_string(m->rcv.proto, 1, 0, &proto)<0) {
+			ERR("unknown transport protocol\n");
+			return -1;
+		}
+	}
+
+	if(atype==0 || m->rcv.bind_address->useinfo.address_str.len<=0) {
+		ip.s = m->rcv.bind_address->address_str.s;
+		ip.len = m->rcv.bind_address->address_str.len;
+	} else {
+		ip.s = m->rcv.bind_address->useinfo.address_str.s;
+		ip.len = m->rcv.bind_address->useinfo.address_str.len;
+	}
+
+	if(atype==0|| m->rcv.bind_address->useinfo.port_no_str.len <= 0) {
+		port.s = m->rcv.bind_address->port_no_str.s;
+		port.len = m->rcv.bind_address->port_no_str.len;
+	} else {
+		port.s = m->rcv.bind_address->useinfo.port_no_str.s;
+		port.len = m->rcv.bind_address->useinfo.port_no_str.len;
+	}
+
+	len = 4 + ip.len + 2*(m->rcv.src_ip.af==AF_INET6)+ 1 + port.len;
+	if (proto.s) {
+		len += TRANSPORT_PARAM_LEN;
+		len += proto.len;
+	}
+
+	if (len > MAX_URI_SIZE) {
+		ERR("buffer too small\n");
+		return -1;
+	}
+
+	p = buf;
+	memcpy(p, "sip:", 4);
+	p += 4;
+
+	if (m->rcv.src_ip.af==AF_INET6)
+		*p++ = '[';
+	memcpy(p, ip.s, ip.len);
+	p += ip.len;
+	if (m->rcv.src_ip.af==AF_INET6)
+		*p++ = ']';
+
+	*p++ = ':';
+
+	memcpy(p, port.s, port.len);
+	p += port.len;
+
+	if (proto.s) {
+		memcpy(p, TRANSPORT_PARAM, TRANSPORT_PARAM_LEN);
+		p += TRANSPORT_PARAM_LEN;
+
+		memcpy(p, proto.s, proto.len);
+		p += proto.len;
+	}
+
+	uri->s = buf;
+	uri->len = len;
+
+	return 0;
+}
+
 
 /*! \brief returns a pointer to the begining of the msg's body
  */

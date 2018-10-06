@@ -249,9 +249,9 @@ extern unsigned char _bx_ub64[0x54+1];
 
 
 
-/*! \brief lenght needed for encoding l bytes */
+/*! \brief length needed for encoding l bytes */
 #define base16_enc_len(l) (l*2)
-/*! \brief maximum lenght needed for decoding l bytes */
+/*! \brief maximum length needed for decoding l bytes */
 #define base16_max_dec_len(l) (l/2)
 /*! \brief actual space needed for decoding a string b of size l */
 #define base16_dec_len(b, l) base16_max_dec_len(l)
@@ -861,5 +861,7 @@ inline static int q_base64_dec(unsigned char* src, int slen,
 /*! \brief inits internal lookup tables */
 int init_basex(void);
 
+char* b58_encode(char *b58, int *b58sz, char *data, int binsz);
+char* b58_decode(char *outb, int *outbszp, char *b58, int b58sz);
 
 #endif /* _basex_h */

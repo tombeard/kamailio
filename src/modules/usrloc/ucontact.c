@@ -308,6 +308,7 @@ int mem_update_ucontact(ucontact_t* _c, ucontact_info_t* _ci)
 	_c->last_keepalive = _ci->last_modified;
 	_c->flags = _ci->flags;
 	_c->cflags = _ci->cflags;
+	_c->server_id = _ci->server_id;
 	_c->tcpconn_id = _ci->tcpconn_id;
 
 	return 0;
@@ -679,10 +680,18 @@ int db_insert_ucontact(ucontact_t* _c)
 		return -1;
 	}
 
-	if (ul_dbf.insert(ul_dbh, keys, vals, nr_cols) < 0) {
-		LM_ERR("inserting contact in db failed %.*s (%.*s)\n",
-				_c->aor->len, ZSW(_c->aor->s), _c->ruid.len, ZSW(_c->ruid.s));
-		return -1;
+	if (db_insert_update && ul_dbf.insert_update) {
+		if (ul_dbf.insert_update(ul_dbh, keys, vals, nr_cols) < 0) {
+			LM_ERR("inserting with update contact in db failed %.*s (%.*s)\n",
+					_c->aor->len, ZSW(_c->aor->s), _c->ruid.len, ZSW(_c->ruid.s));
+			return -1;
+		}
+	} else {
+		if (ul_dbf.insert(ul_dbh, keys, vals, nr_cols) < 0) {
+			LM_ERR("inserting contact in db failed %.*s (%.*s)\n",
+					_c->aor->len, ZSW(_c->aor->s), _c->ruid.len, ZSW(_c->ruid.s));
+			return -1;
+		}
 	}
 
 	if (ul_xavp_contact_name.s) {
@@ -730,7 +739,7 @@ int db_update_ucontact_addr(ucontact_t* _c)
 	LM_DBG("contact:%.*s\n", vals1[n1].val.str_val.len, vals1[n1].val.str_val.s);
 	n1++;
 
-	switch (matching_mode) {
+	switch (ul_matching_mode) {
 		case CONTACT_ONLY:
 			/* update call-id */
 			keys2[nr_cols2] = &callid_col;
@@ -787,7 +796,7 @@ int db_update_ucontact_addr(ucontact_t* _c)
 			nr_cols2++;
 			break;
 		default:
-			LM_CRIT("unknown matching_mode %d\n", matching_mode);
+			LM_CRIT("unknown matching_mode %d\n", ul_matching_mode);
 			return -1;
 	}
 
@@ -1455,7 +1464,7 @@ int db_delete_ucontact_addr(ucontact_t* _c)
 	vals[n].val.str_val = _c->c;
 	n++;
 
-	switch (matching_mode) {
+	switch (ul_matching_mode) {
 		case CONTACT_ONLY:
 			break;
 		case CONTACT_CALLID:
@@ -1477,7 +1486,7 @@ int db_delete_ucontact_addr(ucontact_t* _c)
 			n++;
 			break;
 		default:
-			LM_CRIT("unknown matching_mode %d\n", matching_mode);
+			LM_CRIT("unknown matching_mode %d\n", ul_matching_mode);
 			return -1;
 	}
 

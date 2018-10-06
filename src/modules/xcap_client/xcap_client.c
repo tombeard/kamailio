@@ -82,7 +82,7 @@ static param_export_t params[]={
 	{ "db_url",					PARAM_STR,         &xcap_db_url    },
 	{ "xcap_table",				PARAM_STR,         &xcap_db_table  },
 	{ "periodical_query",		INT_PARAM,         &periodical_query },
-	{ "query_period",	       	INT_PARAM,         &query_period     },
+	{ "query_period",			INT_PARAM,         &query_period     },
 	{    0,                     0,                      0            }
 };
 
@@ -95,18 +95,16 @@ static cmd_export_t  cmds[]=
 
 /** module exports */
 struct module_exports exports= {
-	"xcap_client",				/* module name */
-	DEFAULT_DLFLAGS,			/* dlopen flags */
-	cmds,  						/* exported functions */
-	params,						/* exported parameters */
-	0,      					/* exported statistics */
-	0,		   					/* exported MI functions */
-	0,							/* exported pseudo-variables */
-	0,							/* extra processes */
-	mod_init,					/* module initialization function */
-	0,							/* response handling function */
-	(destroy_function) destroy, /* destroy function */
-	child_init					/* per-child init function */
+	"xcap_client",   /* module name */
+	DEFAULT_DLFLAGS, /* dlopen flags */
+	cmds,            /* exported functions */
+	params,          /* exported parameters */
+	0,               /* exported rpc functions */
+	0,               /* exported pseudo-variables */
+	0,               /* response handling function */
+	mod_init,        /* module init function */
+	child_init,      /* child init function */
+	destroy          /* module destroy function */
 };
 
 /**
@@ -310,24 +308,33 @@ int parse_doc_url(str doc_url, char** serv_addr, xcap_doc_sel_t* doc_sel)
 	char* sl, *str_type;
 
 	sl= strchr(doc_url.s, '/');
+	if(sl==NULL) {
+		return -1;
+	}
 	*sl= '\0';
 	*serv_addr= doc_url.s;
 
 	sl++;
 	doc_sel->auid.s= sl;
 	sl= strchr(sl, '/');
+	if(sl==NULL) {
+		return -1;
+	}
 	doc_sel->auid.len= sl- doc_sel->auid.s;
 
 	sl++;
 	str_type= sl;
 	sl= strchr(sl, '/');
+	if(sl==NULL) {
+		return -1;
+	}
 	*sl= '\0';
 
-	if(strcasecmp(str_type, "users")== 0)
+	if(strcasecmp(str_type, "users")== 0) {
 		doc_sel->type= USERS_TYPE;
-	else
-	if(strcasecmp(str_type, "group")== 0)
+	} else if(strcasecmp(str_type, "group")== 0) {
 		doc_sel->type= GLOBAL_TYPE;
+	}
 
 	sl++;
 

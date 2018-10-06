@@ -15,8 +15,8 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License 
- * along with this program; if not, write to the Free Software 
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  *
  */
@@ -24,7 +24,7 @@
 /*!
  * \file
  * \brief Exec module:: Module interface
- * \ingroup exec 
+ * \ingroup exec
  * Module: \ref exec
  */
 
@@ -37,6 +37,7 @@
 #include "../../core/dprint.h"
 #include "../../core/mod_fix.h"
 #include "../../core/parser/parse_uri.h"
+#include "../../core/kemi.h"
 
 #include "exec.h"
 #include "kill.h"
@@ -44,19 +45,20 @@
 
 MODULE_VERSION
 
-unsigned int time_to_kill=0;
-int exec_bash_safety=1;
+unsigned int time_to_kill = 0;
+int exec_bash_safety = 1;
 
-static int mod_init( void );
+static int mod_init(void);
 
-inline static int w_exec_dset(struct sip_msg* msg, char* cmd, char* foo);
-inline static int w_exec_msg(struct sip_msg* msg, char* cmd, char* foo);
-inline static int w_exec_avp(struct sip_msg* msg, char* cmd, char* avpl);
+static int w_exec_dset(struct sip_msg *msg, char *cmd, char *foo);
+static int w_exec_msg(struct sip_msg *msg, char *cmd, char *foo);
+static int w_exec_avp(struct sip_msg *msg, char *cmd, char *avpl);
 
-static int exec_avp_fixup(void** param, int param_no);
+static int exec_avp_fixup(void **param, int param_no);
 
 inline static void exec_shutdown(void);
 
+/* clang-format off */
 /*
  * Exported functions
  */
@@ -85,170 +87,214 @@ static param_export_t params[] = {
 
 
 struct module_exports exports= {
-	"exec",
-	DEFAULT_DLFLAGS,/* dlopen flags */
-	cmds,           /* Exported functions */
-	params,         /* Exported parameters */
-	0,              /* exported statistics */
-	0,              /* exported MI functions */
-	0,              /* exported pseudo-variables */
-	0,              /* extra processes */
-	mod_init,       /* initialization module */
-	0,              /* response function */
-	exec_shutdown,  /* destroy function */
-	0               /* per-child init function */
+	"exec",				/* module name */
+	DEFAULT_DLFLAGS,	/* dlopen flags */
+	cmds,				/* exported functions */
+	params,				/* exported parameters */
+	0,					/* RPC method exports */
+	0,					/* exported pseudo-variables */
+	0,					/* response handling function */
+	mod_init,			/* module initialization function */
+	0,					/* per-child init function */
+	exec_shutdown		/* module destroy function */
 };
+/* clang-format on */
 
 void exec_shutdown(void)
 {
-	if (time_to_kill) destroy_kill();
+	if(time_to_kill)
+		destroy_kill();
 }
 
 
-static int mod_init( void )
+static int mod_init(void)
 {
-	if (time_to_kill) initialize_kill();
+	if(time_to_kill)
+		initialize_kill();
 	return 0;
 }
 
-inline static int w_exec_dset(struct sip_msg* msg, char* cmd, char* foo)
+static int ki_exec_dset(struct sip_msg *msg, str *cmd)
 {
 	str *uri;
 	environment_t *backup;
 	int ret;
-	str command;
-	
-	if(msg==0 || cmd==0)
+
+	if(msg == 0 || cmd == 0)
 		return -1;
-	
-	backup=0;
-	if (setvars) {
-		backup=set_env(msg);
-		if (!backup) {
+
+	backup = 0;
+	if(setvars) {
+		backup = set_env(msg);
+		if(!backup) {
 			LM_ERR("no env created\n");
 			return -1;
 		}
 	}
 
-	if (msg->new_uri.s && msg->new_uri.len)
-		uri=&msg->new_uri;
+	if(msg->new_uri.s && msg->new_uri.len)
+		uri = &msg->new_uri;
 	else
-		uri=&msg->first_line.u.request.uri;
-	
-	if(fixup_get_svalue(msg, (gparam_p)cmd, &command)!=0)
-	{
-		LM_ERR("invalid command parameter");
-		return -1;
-	}
-	
-	LM_DBG("executing [%s]\n", command.s);
+		uri = &msg->first_line.u.request.uri;
 
-	ret=exec_str(msg, command.s, uri->s, uri->len);
-	if (setvars) {
+	LM_DBG("executing [%s]\n", cmd->s);
+
+	ret = exec_str(msg, cmd->s, uri->s, uri->len);
+	if(setvars) {
 		unset_env(backup);
 	}
 	return ret;
 }
 
-
-inline static int w_exec_msg(struct sip_msg* msg, char* cmd, char* foo)
+static int w_exec_dset(struct sip_msg *msg, char *cmd, char *foo)
 {
-	environment_t *backup;
-	int ret;
 	str command;
-	
-	if(msg==0 || cmd==0)
-		return -1;
-
-	backup=0;
-	if (setvars) {
-		backup=set_env(msg);
-		if (!backup) {
-			LM_ERR("no env created\n");
-			return -1;
-		}
-	}
-	
-	if(fixup_get_svalue(msg, (gparam_p)cmd, &command)!=0)
-	{
+	if(fixup_get_svalue(msg, (gparam_p)cmd, &command) != 0) {
 		LM_ERR("invalid command parameter");
 		return -1;
 	}
-	
-	LM_DBG("executing [%s]\n", command.s);
-	
-	ret=exec_msg(msg, command.s);
-	if (setvars) {
-		unset_env(backup);
-	}
-	return ret;
+	return ki_exec_dset(msg, &command);
 }
 
-inline static int w_exec_avp(struct sip_msg* msg, char* cmd, char* avpl)
+static int ki_exec_msg(struct sip_msg *msg, str *cmd)
 {
 	environment_t *backup;
 	int ret;
-	str command;
-	
-	if(msg==0 || cmd==0)
+
+	if(msg == 0 || cmd == 0)
 		return -1;
-	
-	backup=0;
-	if (setvars) {
-		backup=set_env(msg);
-		if (!backup) {
+
+	backup = 0;
+	if(setvars) {
+		backup = set_env(msg);
+		if(!backup) {
 			LM_ERR("no env created\n");
 			return -1;
 		}
 	}
 
-	if(fixup_get_svalue(msg, (gparam_p)cmd, &command)!=0)
-	{
-		LM_ERR("invalid command parameter");
-		return -1;
-	}
-	
-	LM_DBG("executing [%s]\n", command.s);
+	LM_DBG("executing [%s]\n", cmd->s);
 
-	ret=exec_avp(msg, command.s, (pvname_list_p)avpl);
-	if (setvars) {
+	ret = exec_msg(msg, cmd->s);
+	if(setvars) {
 		unset_env(backup);
 	}
 	return ret;
 }
 
-static int exec_avp_fixup(void** param, int param_no)
+static int w_exec_msg(struct sip_msg *msg, char *cmd, char *foo)
+{
+	str command;
+
+	if(fixup_get_svalue(msg, (gparam_p)cmd, &command) != 0) {
+		LM_ERR("invalid command parameter");
+		return -1;
+	}
+	return ki_exec_msg(msg, &command);
+}
+
+static int w_exec_avp_helper(sip_msg_t *msg, str *cmd, pvname_list_t *avpl)
+{
+	environment_t *backup;
+	int ret;
+
+	if(msg == 0 || cmd == 0)
+		return -1;
+
+	backup = 0;
+	if(setvars) {
+		backup = set_env(msg);
+		if(!backup) {
+			LM_ERR("no env created\n");
+			return -1;
+		}
+	}
+
+	LM_DBG("executing [%s]\n", cmd->s);
+
+	ret = exec_avp(msg, cmd->s, avpl);
+	if(setvars) {
+		unset_env(backup);
+	}
+	return ret;
+}
+
+static int w_exec_avp(struct sip_msg *msg, char *cmd, char *avpl)
+{
+	str command;
+
+	if(fixup_get_svalue(msg, (gparam_p)cmd, &command) != 0) {
+		LM_ERR("invalid command parameter");
+		return -1;
+	}
+	return w_exec_avp_helper(msg, &command, (pvname_list_t *)avpl);
+}
+
+static int ki_exec_avp(sip_msg_t *msg, str *cmd)
+{
+	return w_exec_avp_helper(msg, cmd, NULL);
+}
+
+static int exec_avp_fixup(void **param, int param_no)
 {
 	pvname_list_t *anlist = NULL;
 	str s;
 
-	s.s = (char*)(*param);
-	if (param_no==1)
-	{
-		if(s.s==NULL)
-		{
+	s.s = (char *)(*param);
+	if(param_no == 1) {
+		if(s.s == NULL) {
 			LM_ERR("null format in P%d\n", param_no);
 			return E_UNSPEC;
 		}
 		return fixup_spve_null(param, 1);
-	} else if(param_no==2) {
-		if(s.s==NULL)
-		{
+	} else if(param_no == 2) {
+		if(s.s == NULL) {
 			LM_ERR("null format in P%d\n", param_no);
 			return E_UNSPEC;
 		}
-		s.len =  strlen(s.s);
+		s.len = strlen(s.s);
 		anlist = parse_pvname_list(&s, PVT_AVP);
-		if(anlist==NULL)
-		{
+		if(anlist == NULL) {
 			LM_ERR("bad format in P%d [%s]\n", param_no, s.s);
 			return E_UNSPEC;
 		}
-		*param = (void*)anlist;
+		*param = (void *)anlist;
 		return 0;
 	}
 
 	return 0;
 }
 
+/**
+ *
+ */
+/* clang-format off */
+static sr_kemi_t sr_kemi_exec_exports[] = {
+	{ str_init("exec"), str_init("exec_dset"),
+		SR_KEMIP_INT, ki_exec_dset,
+		{ SR_KEMIP_STR, SR_KEMIP_NONE, SR_KEMIP_NONE,
+			SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE }
+	},
+	{ str_init("exec"), str_init("exec_msg"),
+		SR_KEMIP_INT, ki_exec_msg,
+		{ SR_KEMIP_STR, SR_KEMIP_NONE, SR_KEMIP_NONE,
+			SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE }
+	},
+	{ str_init("exec"), str_init("exec_avp"),
+		SR_KEMIP_INT, ki_exec_avp,
+		{ SR_KEMIP_STR, SR_KEMIP_NONE, SR_KEMIP_NONE,
+			SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE }
+	},
 
+	{ {0, 0}, {0, 0}, 0, NULL, { 0, 0, 0, 0, 0, 0 } }
+};
+/* clang-format on */
+
+/**
+ *
+ */
+int mod_register(char *path, int *dlflags, void *p1, void *p2)
+{
+	sr_kemi_modules_add(sr_kemi_exec_exports);
+	return 0;
+}

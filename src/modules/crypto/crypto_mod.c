@@ -31,6 +31,7 @@
 #include "../../core/pvapi.h"
 #include "../../core/lvalue.h"
 #include "../../core/basex.h"
+#include "../../core/kemi.h"
 
 #include "crypto_uuid.h"
 
@@ -77,18 +78,16 @@ static param_export_t params[]={
 };
 
 struct module_exports exports = {
-	"crypto",
+	"crypto",          /* module name */
 	DEFAULT_DLFLAGS, /* dlopen flags */
-	cmds,
-	params,
-	0,
-	0,              /* exported MI functions */
-	0,              /* exported pseudo-variables */
-	0,              /* extra processes */
-	mod_init,       /* module initialization function */
-	0,              /* response function */
-	mod_destroy,    /* destroy function */
-	child_init      /* per child init function */
+	cmds,            /* cmd (cfg function) exports */
+	params,          /* param exports */
+	0,               /* RPC method exports */
+	0,               /* pseudo-variables exports */
+	0,               /* response handling function */
+	mod_init,        /* module init function */
+	child_init,      /* per-child init function */
+	mod_destroy      /* module destroy function */
 };
 
 
@@ -152,39 +151,28 @@ static void mod_destroy(void)
 /**
  *
  */
-static int w_crypto_aes_encrypt(sip_msg_t* msg, char* inb, char* keyb, char* outb)
+static int ki_crypto_aes_encrypt_helper(sip_msg_t* msg, str *ins, str *keys,
+		pv_spec_t *dst)
 {
-	str ins;
-	str keys;
-	pv_spec_t *dst;
 	pv_value_t val;
 	EVP_CIPHER_CTX *en = NULL;
 	str etext;
 
-	if (fixup_get_svalue(msg, (gparam_t*)inb, &ins) != 0) {
-		LM_ERR("cannot get input value\n");
-		return -1;
-	}
-	if (fixup_get_svalue(msg, (gparam_t*)keyb, &keys) != 0) {
-		LM_ERR("cannot get key value\n");
-		return -1;
-	}
 	en = EVP_CIPHER_CTX_new();
 	if(en==NULL) {
 		LM_ERR("cannot get new cipher context\n");
 		return -1;
 	}
-	dst = (pv_spec_t*)outb;
 
 	/* gen key and iv. init the cipher ctx object */
-	if (crypto_aes_init((unsigned char *)keys.s, keys.len,
+	if (crypto_aes_init((unsigned char *)keys->s, keys->len,
 				(unsigned char*)((_crypto_salt_param)?_crypto_salt:0), en, NULL)) {
 		EVP_CIPHER_CTX_free(en);
 		LM_ERR("couldn't initialize AES cipher\n");
 		return -1;
 	}
-	etext.len = ins.len;
-	etext.s = (char *)crypto_aes_encrypt(en, (unsigned char *)ins.s, &etext.len);
+	etext.len = ins->len;
+	etext.s = (char *)crypto_aes_encrypt(en, (unsigned char *)ins->s, &etext.len);
 	if(etext.s==NULL) {
 		EVP_CIPHER_CTX_free(en);
 		LM_ERR("AES encryption failed\n");
@@ -220,6 +208,45 @@ error:
 /**
  *
  */
+static int ki_crypto_aes_encrypt(sip_msg_t* msg, str *ins, str *keys, str *dpv)
+{
+	pv_spec_t *dst;
+
+	dst = pv_cache_get(dpv);
+
+	if(dst==NULL) {
+		LM_ERR("failed getting pv: %.*s\n", dpv->len, dpv->s);
+		return -1;
+	}
+
+	return ki_crypto_aes_encrypt_helper(msg, ins, keys, dst);
+}
+
+/**
+ *
+ */
+static int w_crypto_aes_encrypt(sip_msg_t* msg, char* inb, char* keyb, char* outb)
+{
+	str ins;
+	str keys;
+	pv_spec_t *dst;
+
+	if (fixup_get_svalue(msg, (gparam_t*)inb, &ins) != 0) {
+		LM_ERR("cannot get input value\n");
+		return -1;
+	}
+	if (fixup_get_svalue(msg, (gparam_t*)keyb, &keys) != 0) {
+		LM_ERR("cannot get key value\n");
+		return -1;
+	}
+	dst = (pv_spec_t*)outb;
+
+	return ki_crypto_aes_encrypt_helper(msg, &ins, &keys, dst);
+}
+
+/**
+ *
+ */
 static int fixup_crypto_aes_encrypt(void** param, int param_no)
 {
 	if(param_no==1 || param_no==2) {
@@ -242,32 +269,22 @@ static int fixup_crypto_aes_encrypt(void** param, int param_no)
 /**
  *
  */
-static int w_crypto_aes_decrypt(sip_msg_t* msg, char* inb, char* keyb, char* outb)
+static int ki_crypto_aes_decrypt_helper(sip_msg_t* msg, str *ins, str *keys,
+		pv_spec_t *dst)
 {
-	str ins;
-	str keys;
-	pv_spec_t *dst;
+
 	pv_value_t val;
 	EVP_CIPHER_CTX *de=NULL;
 	str etext;
 
-	if (fixup_get_svalue(msg, (gparam_t*)inb, &ins) != 0) {
-		LM_ERR("cannot get input value\n");
-		return -1;
-	}
-	if (fixup_get_svalue(msg, (gparam_t*)keyb, &keys) != 0) {
-		LM_ERR("cannot get key value\n");
-		return -1;
-	}
 	de = EVP_CIPHER_CTX_new();
 	if(de==NULL) {
 		LM_ERR("cannot get new cipher context\n");
 		return -1;
 	}
-	dst = (pv_spec_t*)outb;
 
 	/* gen key and iv. init the cipher ctx object */
-	if (crypto_aes_init((unsigned char *)keys.s, keys.len,
+	if (crypto_aes_init((unsigned char *)keys->s, keys->len,
 				(unsigned char*)((_crypto_salt_param)?_crypto_salt:0), NULL, de)) {
 		EVP_CIPHER_CTX_free(de);
 		LM_ERR("couldn't initialize AES cipher\n");
@@ -276,7 +293,7 @@ static int w_crypto_aes_decrypt(sip_msg_t* msg, char* inb, char* keyb, char* out
 
 	memset(&val, 0, sizeof(pv_value_t));
 	etext.s = pv_get_buffer();
-	etext.len = base64_dec((unsigned char *)ins.s, ins.len,
+	etext.len = base64_dec((unsigned char *)ins->s, ins->len,
 					(unsigned char *)etext.s, pv_get_buffer_size()-1);
 	if (etext.len < 0) {
 		EVP_CIPHER_CTX_free(de);
@@ -300,6 +317,46 @@ static int w_crypto_aes_decrypt(sip_msg_t* msg, char* inb, char* keyb, char* out
 	EVP_CIPHER_CTX_cleanup(de);
 	EVP_CIPHER_CTX_free(de);
 	return 1;
+}
+
+/**
+ *
+ */
+static int ki_crypto_aes_decrypt(sip_msg_t* msg, str *ins, str *keys, str *dpv)
+{
+	pv_spec_t *dst;
+
+	dst = pv_cache_get(dpv);
+
+	if(dst==NULL) {
+		LM_ERR("failed getting pv: %.*s\n", dpv->len, dpv->s);
+		return -1;
+	}
+
+	return ki_crypto_aes_decrypt_helper(msg, ins, keys, dst);
+}
+
+/**
+ *
+ */
+static int w_crypto_aes_decrypt(sip_msg_t* msg, char* inb, char* keyb, char* outb)
+{
+	str ins;
+	str keys;
+	pv_spec_t *dst;
+
+	if (fixup_get_svalue(msg, (gparam_t*)inb, &ins) != 0) {
+		LM_ERR("cannot get input value\n");
+		return -1;
+	}
+	if (fixup_get_svalue(msg, (gparam_t*)keyb, &keys) != 0) {
+		LM_ERR("cannot get key value\n");
+		return -1;
+	}
+
+	dst = (pv_spec_t*)outb;
+
+	return ki_crypto_aes_decrypt_helper(msg, &ins, &keys, dst);
 }
 
 /**
@@ -519,5 +576,31 @@ int crypto_aes_test(void)
 	EVP_CIPHER_CTX_cleanup(en);
 	EVP_CIPHER_CTX_free(en);
 
+	return 0;
+}
+
+/**
+ *
+ */
+/* clang-format off */
+static sr_kemi_t sr_kemi_crypto_exports[] = {
+	{ str_init("crypto"), str_init("aes_encrypt"),
+		SR_KEMIP_INT, ki_crypto_aes_encrypt,
+		{ SR_KEMIP_STR, SR_KEMIP_STR, SR_KEMIP_STR,
+			SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE }
+	},
+	{ str_init("crypto"), str_init("aes_decrypt"),
+		SR_KEMIP_INT, ki_crypto_aes_decrypt,
+		{ SR_KEMIP_STR, SR_KEMIP_STR, SR_KEMIP_STR,
+			SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE }
+	},
+
+	{ {0, 0}, {0, 0}, 0, NULL, { 0, 0, 0, 0, 0, 0 } }
+};
+/* clang-format on */
+
+int mod_register(char *path, int *dlflags, void *p1, void *p2)
+{
+	sr_kemi_modules_add(sr_kemi_crypto_exports);
 	return 0;
 }

@@ -90,7 +90,7 @@ int uac_init(void)
 	}
 
 	/* calculate the initial From tag */
-	src[0].s = "Long live SER server";
+	src[0].s = "Long live " NAME " server";
 	src[0].len = strlen(src[0].s);
 	src[1].s = si->address_str.s;
 	src[1].len = strlen(src[1].s);
@@ -221,7 +221,7 @@ static inline int t_run_local_req(
 		uac_req_t *uac_r,
 		struct cell *new_cell, struct retr_buf *request)
 {
-	static struct sip_msg lreq;
+	struct sip_msg lreq = {0};
 	struct onsend_info onsnd_info;
 	tm_xlinks_t backup_xd;
 	int sflag_bk;
@@ -428,6 +428,12 @@ static inline int t_uac_prepare(uac_req_t *uac_r,
 	/* new message => take the dialog send_socket if set, or the default
 	  send_socket if not*/
 	SND_FLAGS_INIT(&snd_flags);
+
+	if (uac_r->dialog->send_sock != NULL)
+	{
+		snd_flags.f |= SND_F_FORCE_SOCKET;
+	}
+
 #ifdef USE_DNS_FAILOVER
 	if ((uri2dst2(cfg_get(core, core_cfg, use_dns_failover) ? &new_cell->uac[0].dns_h : 0,
 			&dst, uac_r->dialog->send_sock, snd_flags,
@@ -475,6 +481,14 @@ static inline int t_uac_prepare(uac_req_t *uac_r,
 	request = &new_cell->uac[0].request;
 	request->dst = dst;
 	request->flags |= nhtype;
+
+#ifdef SO_REUSEPORT
+	if (cfg_get(tcp, tcp_cfg, reuse_port) && 
+			uac_r->ssock!=NULL && uac_r->ssock->len>0 &&
+			request->dst.send_sock->proto == PROTO_TCP) {
+		request->dst.send_flags.f |= SND_F_FORCE_SOCKET;
+	}
+#endif
 
 	if (!is_ack) {
 #ifdef TM_DEL_UNREF
@@ -569,11 +583,18 @@ static inline int t_uac_prepare(uac_req_t *uac_r,
 
 error2:
 #ifdef TM_DEL_UNREF
-	if (!is_ack) {
-		UNREF_FREE(new_cell);
-	}else
-#endif
+	if (is_ack) {
 		free_cell(new_cell);
+	} else {
+		if(atomic_get_int(&new_cell->ref_count)==0) {
+			free_cell(new_cell);
+		} else {
+			UNREF_FREE(new_cell, 0);
+		}
+	}
+#else
+	free_cell(new_cell);
+#endif
 error3:
 	return ret;
 }
@@ -707,7 +728,7 @@ int t_uac_with_ids(uac_req_t *uac_r,
 	}
 
 	if (is_ack) {
-		if (cell) free_cell(cell);
+		free_cell(cell);
 		if (ret_index && ret_label)
 			*ret_index = *ret_label = 0;
 	} else {
@@ -744,7 +765,7 @@ struct retr_buf *local_ack_rb(sip_msg_t *rpl_2xx, struct cell *trans,
 	}
 
 	/* TODO: need next 2? */
-	lack->activ_type = TYPE_LOCAL_ACK;
+	lack->rbtype = TYPE_LOCAL_ACK;
 	lack->my_T = trans;
 
 	return lack;

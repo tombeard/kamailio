@@ -57,18 +57,16 @@ static param_export_t params[]={
 };
 
 struct module_exports exports = {
-	"topos_redis",
+	"topos_redis",  /* module name */
 	DEFAULT_DLFLAGS, /* dlopen flags */
-	cmds,
-	params,
-	0,
-	0,              /* exported MI functions */
+	cmds,           /* exported functions */
+	params,         /* exported parameters */
+	0,              /* exported rpc functions */
 	0,              /* exported pseudo-variables */
-	0,              /* extra processes */
-	mod_init,       /* module initialization function */
-	0,              /* response function */
-	mod_destroy,    /* destroy function */
-	child_init      /* per child init function */
+	0,              /* response handling function */
+	mod_init,       /* module init function */
+	child_init,     /* per child init function */
+	mod_destroy     /* destroy function */
 };
 
 
@@ -97,11 +95,12 @@ static int mod_init(void)
 	_tps_storage_api.clean_branches = tps_redis_clean_branches;
 	_tps_storage_api.load_branch = tps_redis_load_branch;
 	_tps_storage_api.load_dialog = tps_redis_load_dialog;
+	_tps_storage_api.update_branch = tps_redis_update_branch;
 	_tps_storage_api.update_dialog = tps_redis_update_dialog;
 	_tps_storage_api.end_dialog = tps_redis_end_dialog;
 
 	if(_tps_api.set_storage_api(&_tps_storage_api)<0) {
-		LM_ERR("failed to set topos storae api\n");
+		LM_ERR("failed to set topos storage api\n");
 		return -1;
 	}
 	return 0;

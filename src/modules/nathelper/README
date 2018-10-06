@@ -60,6 +60,7 @@ Ovidiu Sas
               4.12. keepalive_timeout (int)
               4.13. udpping_from_path (int)
               4.14. append_sdp_oldmediaip (int)
+              4.15. filter_server_id (int)
 
         5. Functions
 
@@ -104,19 +105,20 @@ Ovidiu Sas
    1.12. Set keepalive_timeout parameter
    1.13. Set udpping_from_path parameter
    1.14. Set append_sdp_oldmediaip parameter
-   1.15. fix_nated_contact usage
-   1.16. fix_nated_sdp usage
-   1.17. add_rcv_paramer usage
-   1.18. fix_nated_register usage
-   1.19. nat_uac_test usage
-   1.20. is_rfc1918 usage
-   1.21. add_contact_alias usage
-   1.22. handle_ruri_alias usage
-   1.23. set_contact_alias usage
-   1.24. $rr_count usage
-   1.25. $rr_top_count usage
-   1.26. nathelper.enable_ping usage
-   1.27. @nathelper.rewrite_contact usage
+   1.15. Set filter_server_id parameter
+   1.16. fix_nated_contact usage
+   1.17. fix_nated_sdp usage
+   1.18. add_rcv_paramer usage
+   1.19. fix_nated_register usage
+   1.20. nat_uac_test usage
+   1.21. is_rfc1918 usage
+   1.22. add_contact_alias usage
+   1.23. handle_ruri_alias usage
+   1.24. set_contact_alias usage
+   1.25. $rr_count usage
+   1.26. $rr_top_count usage
+   1.27. nathelper.enable_ping usage
+   1.28. @nathelper.rewrite_contact usage
 
 Chapter 1. Admin Guide
 
@@ -145,6 +147,7 @@ Chapter 1. Admin Guide
         4.12. keepalive_timeout (int)
         4.13. udpping_from_path (int)
         4.14. append_sdp_oldmediaip (int)
+        4.15. filter_server_id (int)
 
    5. Functions
 
@@ -195,19 +198,19 @@ Chapter 1. Admin Guide
    Currently, the nathelper module supports two types of NAT pings:
      * UDP packet - 4 bytes (zero filled) UDP packets are sent to the
        contact address.
-          + Advantages: low bandwitdh traffic, easy to generate by
+          + Advantages: low bandwidth traffic, easy to generate by
             Kamailio;
           + Disadvantages: unidirectional traffic through NAT (inbound -
             from outside to inside); As many NATs do update the bind
             timeout only on outbound traffic, the bind may expire and
             closed.
-     * SIP request - a stateless SIP request is sent to the contact
+     * SIP request - a stateless SIP request is sent to the UDP contact
        address.
           + Advantages: bidirectional traffic through NAT, since each PING
             request from Kamailio (inbound traffic) will force the SIP
             client to generate a SIP reply (outbound traffic) - the NAT
             bind will be surely kept open.
-          + Disadvantages: higher bandwitdh traffic, more expensive (as
+          + Disadvantages: higher bandwidth traffic, more expensive (as
             time) to generate by Kamailio;
 
 3. Dependencies
@@ -242,6 +245,7 @@ Chapter 1. Admin Guide
    4.12. keepalive_timeout (int)
    4.13. udpping_from_path (int)
    4.14. append_sdp_oldmediaip (int)
+   4.15. filter_server_id (int)
 
 4.1. force_socket (string)
 
@@ -252,7 +256,7 @@ Chapter 1. Admin Guide
 
    Example 1.1. Set force_socket parameter
 ...
-modparam("nathelper", "force_socket", "localhost:33333")
+modparam("nathelper", "force_socket", "127.0.0.1:5060")
 ...
 
 4.2. natping_interval (integer)
@@ -275,8 +279,12 @@ modparam("nathelper", "natping_interval", 10)
 
 4.3. ping_nated_only (integer)
 
-   If this variable is set then only contacts that have “behind_NAT” flag
-   in user location database set will get ping.
+   If this parameter is set to 1 then only contacts that have “behind_NAT”
+   flag in user location database set will get ping.
+
+   If it is 0 and sipping_flag is not set, then the 4-bytes UDP ping is
+   sent to all contacts. If it is 0 and sipping_flag parameter is set,
+   then SIP-request-based pinging is sent to all contacts.
 
    Default value is 0.
 
@@ -403,7 +411,7 @@ modparam("nathelper", "nortpproxy_str", "a=sdpmangled:yes\r\n")
 
 4.12. keepalive_timeout (int)
 
-   The parameter sets the interval in secods after which a natted contact
+   The parameter sets the interval in seconds after which a natted contact
    is removed from location table if it does not reply to SIP keepalives
    (usually OPTIONS ping requests).
 
@@ -444,6 +452,18 @@ modparam("nathelper", "udpping_from_path", 1)
 modparam("nathelper", "append_sdp_oldmediaip", 1)
 ...
 
+4.15. filter_server_id (int)
+
+   Filter contacts by “server_id” core parameter. Use this parameter to
+   limit pinging. When set to “1”, only proxy instances which send packets
+   are those where core server_id matches server_id saved in usrloc.
+   Default value is “0” (disabled).
+
+   Example 1.15. Set filter_server_id parameter
+...
+modparam("nathelper", "filter_server_id", 1)
+...
+
 5. Functions
 
    5.1. fix_nated_contact()
@@ -464,15 +484,15 @@ modparam("nathelper", "append_sdp_oldmediaip", 1)
    This function can be used from REQUEST_ROUTE, ONREPLY_ROUTE,
    BRANCH_ROUTE.
 
-   Example 1.15. fix_nated_contact usage
+   Example 1.16. fix_nated_contact usage
 ...
 if (search("User-Agent: Cisco ATA.*") {fix_nated_contact();};
 ...
 
 5.2.  fix_nated_sdp(flags [, ip_address])
 
-   Alters the SDP information in orer to facilitate NAT traversal. What
-   changes to be performed may be controled via the “flags” parameter.
+   Alters the SDP information in order to facilitate NAT traversal. What
+   changes to be performed may be controlled via the “flags” parameter.
    Return value is -1 if error occurred, 1 if ip's were replaced, 2 if no
    ip's were replaced.
 
@@ -486,27 +506,29 @@ if (search("User-Agent: Cisco ATA.*") {fix_nated_contact();};
           + 0x08 - rewrite IP from origin description (o=) with source
             address of the message or the provided IP address (the provide
             IP address take precedence over the source address).
-     * ip_address - IP to be used for rewritting SDP. If not specified,
-       the received signalling IP will be used. The parameter allows
+     * ip_address - IP to be used for rewriting SDP. If not specified, the
+       received signalling IP will be used. The parameter allows
        pseudo-variables usage. NOTE: For the IP to be used, you need to
        use 0x02 or 0x08 flags, otherwise it will have no effect.
 
    This function can be used from REQUEST_ROUTE, ONREPLY_ROUTE,
    FAILURE_ROUTE, BRANCH_ROUTE.
 
-   Example 1.16. fix_nated_sdp usage
+   Example 1.17. fix_nated_sdp usage
 ...
 if (search("User-Agent: Cisco ATA.*") {fix_nated_sdp("3");};
 ...
 
 5.3.  add_rcv_param([flag]),
 
-   Add a received parameter to the “Contact” header fields or the Contact
-   URI. The parameter will contain the URI created from the source IP,
-   port, and protocol of the packet containing the SIP message. The
-   parameter can be then processed by another registrar. This is useful,
-   for example, when replicating register messages using t_replicate
-   function to another registrar.
+   Add a received parameter to the “Contact” header fields (available for
+   all transports) or to the Contact URI (available only for UDP traffic).
+
+   The parameter will contain the URI created from the source IP, port,
+   and protocol (if different than UDP) of the packet containing the SIP
+   message. The parameter can be then processed by another registrar. This
+   is useful, for example, when replicating register messages using
+   t_replicate function to another registrar.
 
    Meaning of the parameters is as follows:
      * flag - flags to indicate if the parameter should be added to
@@ -516,7 +538,7 @@ if (search("User-Agent: Cisco ATA.*") {fix_nated_sdp("3");};
 
    This function can be used from REQUEST_ROUTE.
 
-   Example 1.17. add_rcv_paramer usage
+   Example 1.18. add_rcv_paramer usage
 ...
 add_rcv_param(); # add the parameter to the Contact header
 ....
@@ -528,7 +550,7 @@ add_rcv_param("1"); # add the parameter to the Contact URI
    The function creates a URI consisting of the source IP, port, and
    protocol and stores the URI in an Attribute-Value-Pair. The URI will be
    appended as "received" parameter to Contact in 200 OK and registrar
-   will store it in the received cloumn in the location table.
+   will store it in the received column in the location table.
 
    Note: You have to set the “received_avp” parameter of the nathelper
    module and the registrar module (both module parameters must have the
@@ -536,7 +558,7 @@ add_rcv_param("1"); # add the parameter to the Contact URI
 
    This function can be used from REQUEST_ROUTE.
 
-   Example 1.18. fix_nated_register usage
+   Example 1.19. fix_nated_register usage
 ...
 fix_nated_register();
 ...
@@ -550,13 +572,15 @@ fix_nated_register();
      * 1 - The “Contact” header field is searched for occurrence of
        RFC1918 or RFC6598 addresses.
      * 2 - the "received" test is used: address in the “Via” header is
-       compared against source IP address of signaling
+       compared against source IP address of signaling. If the “Via”
+       header contains no port, it uses the default SIP port 5060
      * 4 - The Top Most “Via” is searched for occurrence of RFC1918 or
        RFC6598 addresses
      * 8 - The SDP is searched for occurrence of RFC1918 or RFC6598
        addresses
      * 16 - Test if the source port is different from the port in the
-       “Via” header
+       “Via” header. If the “Via” header contains no port, it uses the
+       default SIP port 5060
      * 32 - Test if the source IP address of signaling is a RFC1918 or
        RFC6598 address
      * 64 - Test if the source connection of signaling is a WebSocket
@@ -570,7 +594,7 @@ fix_nated_register();
    This function can be used from REQUEST_ROUTE, ONREPLY_ROUTE,
    FAILURE_ROUTE, BRANCH_ROUTE.
 
-   Example 1.19. nat_uac_test usage
+   Example 1.20. nat_uac_test usage
 ...
 if(nat_uac_test("19")) {
     rtpproxy_manage("co");
@@ -584,7 +608,7 @@ if(nat_uac_test("19")) {
 
    This function can be used from ANY_ROUTE.
 
-   Example 1.20. is_rfc1918 usage
+   Example 1.21. is_rfc1918 usage
 ...
 if(is_rfc1918("$rd")) {
     # domain in r-uri is private address
@@ -596,12 +620,13 @@ if(is_rfc1918("$rd")) {
    Adds an “;alias=ip~port~transport” parameter to the contact URI
    containing either received ip, port, and transport protocol or those
    given as parameters. If called without parameters, “;alias” parameter
-   is only added if received ip and port differ from those in contact URI.
+   is only added if received ip, port, or transport protocol differs from
+   that in contact URI.
 
    This function can be used from REQUEST_ROUTE, ONREPLY_ROUTE,
    BRANCH_ROUTE, and LOCAL_ROUTE.
 
-   Example 1.21. add_contact_alias usage
+   Example 1.22. add_contact_alias usage
 ...
     if (!is_present_hf("Record-Route")) {
         if (!add_contact_alias("$var(src_ip)", "$Rp", "tcp")) {
@@ -628,7 +653,7 @@ if(is_rfc1918("$rd")) {
    This function can be used from REQUEST_ROUTE, BRANCH_ROUTE, and
    LOCAL_ROUTE.
 
-   Example 1.22. handle_ruri_alias usage
+   Example 1.23. handle_ruri_alias usage
 ...
     if ($du == "") {
         handle_ruri_alias();
@@ -657,7 +682,7 @@ if(is_rfc1918("$rd")) {
    This function can be used from REQUEST_ROUTE, ONREPLY_ROUTE,
    BRANCH_ROUTE, and FAILURE_ROUTE.
 
-   Example 1.23. set_contact_alias usage
+   Example 1.24. set_contact_alias usage
 ...
     if (!is_present_hf("Record-Route")) {
         if (!set_contact_alias()) {
@@ -677,7 +702,7 @@ if(is_rfc1918("$rd")) {
 
    Number of Record Routes in received SIP request or reply.
 
-   Example 1.24. $rr_count usage
+   Example 1.25. $rr_count usage
 ...
     $avp(rr_count) = $rr_count;
 ...
@@ -689,7 +714,7 @@ if(is_rfc1918("$rd")) {
    value of $rr_top_count is 1. If there is no Record Route(s), value of
    $rr_top_count is 0.
 
-   Example 1.25. $rr_top_count usage
+   Example 1.26. $rr_top_count usage
 ...
     if ($rr_count == $avp(rr_count) + $rr_top_count) {
         route(ADD_CONTACT_ALIAS);
@@ -707,7 +732,7 @@ if(is_rfc1918("$rd")) {
 
    The function takes only one parameter - a number in decimal format.
 
-   Example 1.26. nathelper.enable_ping usage
+   Example 1.27. nathelper.enable_ping usage
 ...
 $ kamcmd nathelper.enable_ping 1
 ...
@@ -722,7 +747,7 @@ $ kamcmd nathelper.enable_ping 1
    counted from 1. Only IP:port is rewritten, remaining part are left
    unchanged. Full nameaddr is supported.
 
-   Example 1.27. @nathelper.rewrite_contact usage
+   Example 1.28. @nathelper.rewrite_contact usage
 ...
 $c = @nathelper.rewrite_contact[1];
 ...
@@ -746,7 +771,7 @@ Chapter 2. Frequently Asked Questions
 
        Where can I find more about Kamailio?
 
-       Take a look at http://www.kamailio.org/.
+       Take a look at https://www.kamailio.org/.
 
    2.3.
 
@@ -755,16 +780,13 @@ Chapter 2. Frequently Asked Questions
        First at all check if your question was already answered on one of our
        mailing lists:
          * User Mailing List -
-           http://lists.sip-router.org/cgi-bin/mailman/listinfo/sr-users
+           https://lists.kamailio.org/cgi-bin/mailman/listinfo/sr-users
          * Developer Mailing List -
-           http://lists.sip-router.org/cgi-bin/mailman/listinfo/sr-dev
+           https://lists.kamailio.org/cgi-bin/mailman/listinfo/sr-dev
 
        E-mails regarding any stable Kamailio release should be sent to
-       <sr-users@lists.sip-router.org> and e-mails regarding development
-       versions should be sent to <sr-dev@lists.sip-router.org>.
-
-       If you want to keep the mail private, send it to
-       <sr-users@lists.sip-router.org>.
+       <sr-users@lists.kamailio.org> and e-mails regarding development
+       versions should be sent to <sr-dev@lists.kamailio.org>.
 
    2.4.
 

@@ -31,6 +31,7 @@
 #include "../../core/timer_proc.h"
 #include "../../core/rpc.h"
 #include "../../core/rpc_lookup.h"
+#include "../../core/kemi.h"
 
 #include "../../core/parser/parse_param.h"
 
@@ -65,18 +66,16 @@ static param_export_t params[]={
 };
 
 struct module_exports exports = {
-	"statsc",
+	"statsc",        /* module name */
 	DEFAULT_DLFLAGS, /* dlopen flags */
-	cmds,
-	params,
-	0,
-	0,              /* exported MI functions */
-	0,              /* exported pseudo-variables */
-	0,              /* extra processes */
-	mod_init,       /* module initialization function */
-	0,              /* response function */
-	mod_destroy,    /* destroy function */
-	child_init      /* per child init function */
+	cmds,            /* cmd exports */
+	params,          /* param exports */
+	0,               /* exported RPC methods */
+	0,               /* exported pseudo-variables */
+	0,               /* response function */
+	mod_init,        /* module initialization function */
+	child_init,      /* per child init function */
+	mod_destroy      /* destroy function */
 };
 
 
@@ -119,9 +118,18 @@ static void mod_destroy(void)
 /**
  *
  */
+static int ki_statsc_reset(sip_msg_t* msg)
+{
+	LM_ERR("not implemented yet\n");
+	return 1;
+}
+
+/**
+ *
+ */
 static int w_statsc_reset(sip_msg_t* msg, char* p1, char* p2)
 {
-	return 1;
+	return ki_statsc_reset(msg);
 }
 
 typedef int (*statsc_func_t)(void *p, int64_t *res);
@@ -341,7 +349,7 @@ static void statsc_rpc_report(rpc_t* rpc, void* ctx)
 		rpc->fault(ctx, 500, "Missing command parameter");
 		return;
 	}
-	
+
 	if(cname.len==4 && strncmp(cname.s, "list", 4)==0) {
 		cmode = 1;
 	} else if(cname.len==4 && strncmp(cname.s, "diff", 4)==0) {
@@ -473,3 +481,26 @@ int statsc_init_rpc(void)
 	return 0;
 }
 
+/**
+ *
+ */
+/* clang-format off */
+static sr_kemi_t sr_kemi_statsc_exports[] = {
+	{ str_init("statsc"), str_init("statsc_reset"),
+		SR_KEMIP_INT, ki_statsc_reset,
+		{ SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE,
+			SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE }
+	},
+
+	{ {0, 0}, {0, 0}, 0, NULL, { 0, 0, 0, 0, 0, 0 } }
+};
+/* clang-format on */
+
+/**
+ *
+ */
+int mod_register(char *path, int *dlflags, void *p1, void *p2)
+{
+	sr_kemi_modules_add(sr_kemi_statsc_exports);
+	return 0;
+}

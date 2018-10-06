@@ -10,13 +10,16 @@ ERLANG=$(shell which erl)
 ifneq ($(ERLANG),)
 ERLANG_LIBDIR=$(shell $(ERLANG) -noshell -eval 'io:format("~n~s/lib~n", [[code:lib_dir("erl_interface")]]).' -s erlang halt | tail -n 1)
 ERLANG_INCDIR=$(shell $(ERLANG) -noshell -eval 'io:format("~n~s/include~n", [[code:lib_dir("erl_interface")]]).' -s erlang halt | tail -n 1)
-else
+endif
+
+ifeq ($(ERLANG_LIBDIR)$(ERLANG_INCDIR),)
 $(error Not found Erlang)
 endif
+
 LIBS=-L$(ERLANG_LIBDIR) -lei -lpthread
 
 DEFS+=-I$(ERLANG_INCDIR)
-DEFS+=-DKAMAILIO_MOD_INTERFACE -D_REENTRANT
+DEFS+=-D_REENTRANT
 
 
 include ../../Makefile.modules

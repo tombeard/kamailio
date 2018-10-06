@@ -183,7 +183,10 @@ int t_reply( struct cell *t, struct sip_msg * , unsigned int , char * );
    REPLY_LOCK -- useful to be called within reply
    processing
 */
+int t_reply_str( struct cell *t, struct sip_msg * , unsigned int , str * );
+
 int t_reply_unsafe( struct cell *t, struct sip_msg * , unsigned int , char * );
+int t_reply_str_unsafe( struct cell *t, struct sip_msg * , unsigned int , str * );
 
 
 enum rps relay_reply( struct cell *t, struct sip_msg *p_msg, int branch,
@@ -227,7 +230,7 @@ void t_drop_replies(int v);
 void rpc_reply(rpc_t* rpc, void* c);
 void rpc_reply_callid(rpc_t* rpc, void* c);
 
-void faked_env( struct cell *t,struct sip_msg *msg, int is_async_env);
+int faked_env(struct cell *t,struct sip_msg *msg, int is_async_env);
 struct sip_msg * fake_req(struct sip_msg *shmem_msg,
 	int extra_flags, struct ua_client *uac, int *len);
 

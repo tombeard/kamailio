@@ -137,17 +137,15 @@ static param_export_t params[] = {
 
 struct module_exports exports = {
 	"avpops",
-	DEFAULT_DLFLAGS, /* dlopen flags */
-	cmds,       /* Exported functions */
-	params,     /* Exported parameters */
-	0,          /* exported statistics */
-	0,          /* exported MI functions */
-	0,          /* exported pseudo-variables */
-	0,          /* extra processes */
-	avpops_init,/* Module initialization function */
-	0,
-	0,
-	(child_init_function) avpops_child_init /* per-child init function */
+	DEFAULT_DLFLAGS, 	/* dlopen flags */
+	cmds,       		/* Exported functions */
+	params,     		/* Exported parameters */
+	0,          		/* exported RPC methods */
+	0,          		/* exported pseudo-variables */
+	0,	    		/* response handling function */
+	avpops_init,		/* Module initialization function */
+	avpops_child_init, 	/* per-child init function */
+	0			/* module destroy function */
 };
 
 
@@ -212,7 +210,7 @@ static int fixup_db_avp(void** param, int param_no, int allow_scheme)
 			LM_ERR("no more pkg mem!\n");
 			return E_OUT_OF_MEM;
 		}
-		memset( sp, 0, sizeof(struct fis_param));
+		memset(sp, 0, sizeof(struct fis_param));
 
 		if ( (p=strchr(s.s,'/'))!=0)
 		{
@@ -227,8 +225,8 @@ static int fixup_db_avp(void** param, int param_no, int allow_scheme)
 			} else if (!strcasecmp("uuid",p)) {
 				flags|=AVPOPS_FLAG_UUID0;
 			} else {
-				LM_ERR("unknown flag "
-					"<%s>\n",p);
+				LM_ERR("unknown flag <%s>\n",p);
+				pkg_free(sp);
 				return E_UNSPEC;
 			}
 		}
@@ -239,6 +237,7 @@ static int fixup_db_avp(void** param, int param_no, int allow_scheme)
 			sp->u.s.s = (char*)pkg_malloc(strlen(s.s)+1);
 			if (sp->u.s.s==0) {
 				LM_ERR("no more pkg mem!!\n");
+				pkg_free(sp);
 				return E_OUT_OF_MEM;
 			}
 			sp->u.s.len = strlen(s.s);
@@ -251,6 +250,7 @@ static int fixup_db_avp(void** param, int param_no, int allow_scheme)
 			{
 				LM_ERR("bad param 1; "
 					"expected : $pseudo-variable or int/str value\n");
+				pkg_free(sp);
 				return E_UNSPEC;
 			}
 			
@@ -275,6 +275,7 @@ static int fixup_db_avp(void** param, int param_no, int allow_scheme)
 		if ( parse_avp_db( s.s, dbp, allow_scheme)!=0 )
 		{
 			LM_ERR("parse failed\n");
+			pkg_free(dbp);
 			return E_UNSPEC;
 		}
 		*param=(void*)dbp;
@@ -379,6 +380,7 @@ static int fixup_delete_avp(void** param, int param_no)
 			if (ap->u.sval->type!=PVT_AVP)
 			{
 				LM_ERR("bad param; expected : $avp(name)\n");
+				pkg_free(ap);
 				return E_UNSPEC;
 			}
 			ap->opd|=AVPOPS_VAL_PVAR;
@@ -483,6 +485,7 @@ static int fixup_copy_avp(void** param, int param_no)
 	if (ap->u.sval->type!=PVT_AVP)
 	{
 		LM_ERR("you must specify only AVP as parameter\n");
+		pkg_free(ap);
 		return E_UNSPEC;
 	}
 
@@ -510,6 +513,7 @@ static int fixup_copy_avp(void** param, int param_no)
 					break;
 				default:
 					LM_ERR("bad flag <%c>\n",*p);
+					pkg_free(ap);
 					return E_UNSPEC;
 			}
 		}
@@ -556,6 +560,7 @@ static int fixup_pushto_avp(void** param, int param_no)
 							&& (ap->opd|=AVPOPS_FLAG_DOMAIN0)) ))
 				{
 					LM_ERR("unknown ruri flag \"%s\"!\n",p);
+					pkg_free(ap);
 					return E_UNSPEC;
 				}
 			break;
@@ -563,6 +568,7 @@ static int fixup_pushto_avp(void** param, int param_no)
 				if ( p!=0 )
 				{
 					LM_ERR("unknown duri flag \"%s\"!\n",p);
+					pkg_free(ap);
 					return E_UNSPEC;
 				}
 				ap->opd = AVPOPS_VAL_NONE|AVPOPS_USE_DURI;
@@ -571,12 +577,14 @@ static int fixup_pushto_avp(void** param, int param_no)
 				/* what's the hdr destination ? request or reply? */
 				LM_ERR("push to header  is obsoleted - use append_hf() "
 						"or append_to_reply() from textops module!\n");
+				pkg_free(ap);
 				return E_UNSPEC;
 			break;
 			case PVT_BRANCH:
 				if ( p!=0 )
 				{
 					LM_ERR("unknown branch flag \"%s\"!\n",p);
+					pkg_free(ap);
 					return E_UNSPEC;
 				}
 				ap->opd = AVPOPS_VAL_NONE|AVPOPS_USE_BRANCH;
@@ -584,6 +592,7 @@ static int fixup_pushto_avp(void** param, int param_no)
 			default:
 				LM_ERR("unsupported destination \"%s\"; "
 						"expected $ru,$du,$br\n",s);
+				pkg_free(ap);
 				return E_UNSPEC;
 		}
 	} else if (param_no==2) {
@@ -652,6 +661,7 @@ static int fixup_check_avp(void** param, int param_no)
 		if (ap->u.sval->type==PVT_NULL)
 		{
 			LM_ERR("null pseudo-variable in param 1\n");
+			pkg_free(ap);
 			return E_UNSPEC;
 		}
 	} else if (param_no==2) {
@@ -669,13 +679,15 @@ static int fixup_check_avp(void** param, int param_no)
 				if (re==0)
 				{
 					LM_ERR("no more pkg mem\n");
+					pkg_free(ap);
 					return E_OUT_OF_MEM;
 				}
 				LM_DBG("compiling regexp <%.*s>\n", ap->u.s.len, ap->u.s.s);
 				if (regcomp(re, ap->u.s.s,REG_EXTENDED|REG_ICASE|REG_NEWLINE))
 				{
-					pkg_free(re);
 					LM_ERR("bad re <%.*s>\n", ap->u.s.len, ap->u.s.s);
+					pkg_free(re);
+					pkg_free(ap);
 					return E_BAD_RE;
 				}
 				ap->u.s.s = (char*)re;
@@ -686,6 +698,7 @@ static int fixup_check_avp(void** param, int param_no)
 			{
 				LM_ERR("fast_match operation requires string value or "
 						"avp name/alias (%d/%d)\n",	ap->opd, ap->ops);
+				pkg_free(ap);
 				return E_UNSPEC;
 			}
 		}
@@ -723,18 +736,22 @@ static int fixup_subst(void** param, int param_no)
 		if (ap==0)
 		{
 			LM_ERR("unable to get pseudo-variable in param 2 [%s]\n", s);
+			pkg_free(av);
 			return E_OUT_OF_MEM;
 		}
 		if (ap->u.sval->type!=PVT_AVP)
 		{
 			LM_ERR("bad attribute name <%s>\n", (char*)*param);
 			pkg_free(av);
+			pkg_free(ap);
 			return E_UNSPEC;
 		}
 		/* attr name is mandatory */
 		if (ap->opd&AVPOPS_VAL_NONE)
 		{
 			LM_ERR("you must specify a name for the AVP\n");
+			pkg_free(av);
+			pkg_free(ap);
 			return E_UNSPEC;
 		}
 		av[0] = ap;
@@ -743,6 +760,7 @@ static int fixup_subst(void** param, int param_no)
 			*param=(void*)av;
 			return 0;
 		}
+		ap = 0;
 		
 		/* dst || flags */
 		s = p;
@@ -756,6 +774,7 @@ static int fixup_subst(void** param, int param_no)
 				if (ap==0)
 				{
 					LM_ERR("unable to get pseudo-variable in param 2 [%s]\n",s);
+					pkg_free(av);
 					return E_OUT_OF_MEM;
 				}
 			
@@ -763,12 +782,15 @@ static int fixup_subst(void** param, int param_no)
 				{
 					LM_ERR("bad attribute name <%s>!\n", s);
 					pkg_free(av);
+					pkg_free(ap);
 					return E_UNSPEC;
 				}
 				/* attr name is mandatory */
 				if (ap->opd&AVPOPS_VAL_NONE)
 				{
 					LM_ERR("you must specify a name for the AVP!\n");
+					pkg_free(av);
+					pkg_free(ap);
 					return E_UNSPEC;
 				}
 				av[1] = ap;
@@ -794,6 +816,9 @@ static int fixup_subst(void** param, int param_no)
 					break;
 				default:
 					LM_ERR("bad flag <%c>\n",*p);
+					pkg_free(av[0]);
+					if(av[1]) pkg_free(av[1]);
+					pkg_free(av);
 					return E_UNSPEC;
 			}
 		}
@@ -843,11 +868,13 @@ static int fixup_op_avp(void** param, int param_no)
 		if (av[0]==0)
 		{
 			LM_ERR("unable to get pseudo-variable in param 1\n");
+			pkg_free(av);
 			return E_OUT_OF_MEM;
 		}
 		if (av[0]->u.sval->type!=PVT_AVP)
 		{
 			LM_ERR("bad attribute name <%s>\n", (char*)*param);
+			pkg_free(av[0]);
 			pkg_free(av);
 			return E_UNSPEC;
 		}
@@ -862,11 +889,15 @@ static int fixup_op_avp(void** param, int param_no)
 		if (ap==0)
 		{
 			LM_ERR("unable to get pseudo-variable in param 1 (2)\n");
+			pkg_free(av[0]);
+			pkg_free(av);
 			return E_OUT_OF_MEM;
 		}
 		if (ap->u.sval->type!=PVT_AVP)
 		{
 			LM_ERR("bad attribute name/alias <%s>!\n", s);
+			pkg_free(ap);
+			pkg_free(av[0]);
 			pkg_free(av);
 			return E_UNSPEC;
 		}
@@ -883,6 +914,7 @@ static int fixup_op_avp(void** param, int param_no)
 		if ( (ap->opd&AVPOPS_VAL_STR)!=0 && (ap->opd&AVPOPS_VAL_PVAR)==0)
 		{
 			LM_ERR("operations requires integer values\n");
+			pkg_free(ap);
 			return E_UNSPEC;
 		}
 		*param=(void*)ap;
@@ -913,6 +945,7 @@ static int fixup_is_avp_set(void** param, int param_no)
 		if (ap->u.sval->type!=PVT_AVP)
 		{
 			LM_ERR("bad attribute name <%s>\n", (char*)*param);
+			pkg_free(ap);
 			return E_UNSPEC;
 		}
 		if(p==0 || *p=='\0')
@@ -931,6 +964,7 @@ static int fixup_is_avp_set(void** param, int param_no)
 					if(ap->ops&AVPOPS_FLAG_CASTS)
 					{
 						LM_ERR("invalid flag combination <%c> and 's|S'\n",*p);
+						pkg_free(ap);
 						return E_UNSPEC;
 					}
 					ap->ops|=AVPOPS_FLAG_CASTN;
@@ -940,12 +974,14 @@ static int fixup_is_avp_set(void** param, int param_no)
 					if(ap->ops&AVPOPS_FLAG_CASTN)
 					{
 						LM_ERR("invalid flag combination <%c> and 'n|N'\n",*p);
+						pkg_free(ap);
 						return E_UNSPEC;
 					}
 					ap->ops|=AVPOPS_FLAG_CASTS;
 					break;
 				default:
 					LM_ERR("bad flag <%c>\n",*p);
+					pkg_free(ap);
 					return E_UNSPEC;
 			}
 		}

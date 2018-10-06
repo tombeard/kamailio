@@ -57,6 +57,7 @@ extern str th_vparam_prefix;
 
 extern int th_param_mask_callid;
 extern int th_mask_addr_myself;
+extern int th_uri_prefix_checks;
 
 int th_skip_rw(char *s, int len)
 {
@@ -99,7 +100,7 @@ int th_get_param_value(str *in, str *name, str *value)
 			return 0;
 		}
 	}
-	
+
 	if(params) free_params(params);
 	return 1;
 
@@ -107,17 +108,25 @@ int th_get_param_value(str *in, str *name, str *value)
 
 int th_get_uri_param_value(str *uri, str *name, str *value)
 {
-	struct sip_uri puri;
+	sip_uri_t puri;
 
 	memset(value, 0, sizeof(str));
 	if(parse_uri(uri->s, uri->len, &puri)<0)
 		return -1;
+
+	LM_DBG("uri params: [%.*s] - sip uri params: [%.*s]\n",
+			puri.params.len, (puri.params.s)?puri.params.s:"",
+			puri.sip_params.len, (puri.sip_params.s)?puri.sip_params.s:"");
+
+	if(puri.sip_params.len>0)
+		return th_get_param_value(&puri.sip_params, name, value);
+
 	return th_get_param_value(&puri.params, name, value);
 }
 
 int th_get_uri_type(str *uri, int *mode, str *value)
 {
-	struct sip_uri puri;
+	sip_uri_t puri;
 	int ret;
 	str r2 = {"r2", 2};
 
@@ -187,7 +196,7 @@ int th_mask_via(sip_msg_t *msg)
 					LM_ERR("cannot encode via %d\n", i);
 					return -1;
 				}
-					
+
 				LM_DBG("+body: %d: [%.*s]\n", out.len, out.len, out.s);
 				l=del_lump(msg, via->name.s-msg->buf, vlen, 0);
 				if (l==0)
@@ -220,7 +229,7 @@ int th_mask_callid(sip_msg_t *msg)
 		LM_ERR("cannot get Call-Id header\n");
 		return -1;
 	}
-				
+
 	out.s = th_mask_encode(msg->callid->body.s, msg->callid->body.len,
 				&th_callid_prefix, &out.len);
 	if(out.s==NULL)
@@ -228,7 +237,7 @@ int th_mask_callid(sip_msg_t *msg)
 		LM_ERR("cannot encode callid\n");
 		return -1;
 	}
-				
+
 	l=del_lump(msg, msg->callid->body.s-msg->buf, msg->callid->body.len, 0);
 	if (l==0)
 	{
@@ -253,7 +262,7 @@ int th_mask_contact(sip_msg_t *msg)
 	char *p;
 	contact_t *c;
 
-	if(msg->contact==NULL) 
+	if(msg->contact==NULL)
 	{
 		LM_DBG("no contact header\n");
 		return 0;
@@ -264,7 +273,7 @@ int th_mask_contact(sip_msg_t *msg)
 		LM_ERR("failed parsing contact header\n");
 		return -1;
 	}
-	
+
 	c = ((contact_body_t*)msg->contact->parsed)->contacts;
 	in = c->uri;
 
@@ -292,7 +301,7 @@ int th_mask_contact(sip_msg_t *msg)
 		out.s = p;
 		out.len += 2;
 	}
-				
+
 	l=del_lump(msg, in.s-msg->buf, in.len, 0);
 	if (l==0)
 	{
@@ -324,9 +333,9 @@ int th_mask_record_route(sip_msg_t *msg)
 	}
 	hdr = msg->record_route;
 	i = 0;
-	while(hdr!=NULL) 
+	while(hdr!=NULL)
 	{
-		if (parse_rr(hdr) < 0) 
+		if (parse_rr(hdr) < 0)
 		{
 			LM_ERR("failed to parse RR\n");
 			return -1;
@@ -390,6 +399,14 @@ int th_unmask_via(sip_msg_t *msg, str *cookie)
 			LM_DBG("body: %d: [%.*s]\n", vlen, vlen, via->name.s);
 			if(i!=1)
 			{
+				/* Skip if via is not encoded */
+				if (th_uri_prefix_checks && (via->host.len!=th_ip.len
+						|| strncasecmp(via->host.s, th_ip.s, th_ip.len)!=0))
+				{
+					LM_DBG("via %d is not encoded",i);
+					continue;
+				}
+
 				vp = th_get_via_param(via, &th_vparam_name);
 				if(vp==NULL)
 				{
@@ -404,10 +421,10 @@ int th_unmask_via(sip_msg_t *msg, str *cookie)
 							&th_vparam_prefix, 0, &out.len);
 				if(out.s==NULL)
 				{
-					LM_ERR("cannot encode via %d\n", i);
+					LM_ERR("cannot decode via %d\n", i);
 					return -1;
 				}
-					
+
 				LM_DBG("+body: %d: [%.*s]\n", out.len, out.len, out.s);
 				if(i==2)
 				{
@@ -419,7 +436,7 @@ int th_unmask_via(sip_msg_t *msg, str *cookie)
 						return -1;
 
 					}
-					
+
 					memset(via2, 0, sizeof(struct via_body));
 					memcpy(out.s+out.len, CRLF, CRLF_LEN);
 					out.s[out.len+CRLF_LEN]='X';
@@ -466,16 +483,24 @@ int th_unmask_callid(sip_msg_t *msg)
 {
 	struct lump* l;
 	str out;
-	
+
 	if(th_param_mask_callid==0)
 		return 0;
-	
+
 	if(msg->callid==NULL)
 	{
 		LM_ERR("cannot get Call-Id header\n");
 		return -1;
 	}
-				
+
+	/* Do nothing if call-id is not encoded */
+	if ((msg->callid->body.len<th_callid_prefix.len) ||
+			(strncasecmp(msg->callid->body.s,th_callid_prefix.s,th_callid_prefix.len)!=0))
+	{
+		LM_DBG("call-id [%.*s] not encoded",msg->callid->body.len,msg->callid->body.s);
+		return 0;
+	}
+
 	out.s = th_mask_decode(msg->callid->body.s, msg->callid->body.len,
 					&th_callid_prefix, 0, &out.len);
 	if(out.s==NULL)
@@ -483,7 +508,7 @@ int th_unmask_callid(sip_msg_t *msg)
 		LM_ERR("cannot decode callid\n");
 		return -1;
 	}
-				
+
 	l=del_lump(msg, msg->callid->body.s-msg->buf, msg->callid->body.len, 0);
 	if (l==0)
 	{
@@ -563,9 +588,9 @@ int th_flip_record_route(sip_msg_t *msg, int mode)
 	act = 0;
 	if(mode==1)
 		act = 2;
-	while(hdr!=NULL) 
+	while(hdr!=NULL)
 	{
-		if (parse_rr(hdr) < 0) 
+		if (parse_rr(hdr) < 0)
 		{
 			LM_ERR("failed to parse RR\n");
 			return -1;
@@ -656,9 +681,9 @@ int th_unmask_route(sip_msg_t *msg)
 	}
 	hdr = msg->route;
 	i = 0;
-	while(hdr!=NULL) 
+	while(hdr!=NULL)
 	{
-		if (parse_rr(hdr) < 0) 
+		if (parse_rr(hdr) < 0)
 		{
 			LM_ERR("failed to parse RR\n");
 			return -1;
@@ -670,10 +695,22 @@ int th_unmask_route(sip_msg_t *msg)
 			i++;
 			if(i!=1)
 			{
+				/* Skip if route is not encoded */
+				if (th_uri_prefix_checks
+						&& ((rr->nameaddr.uri.len<th_uri_prefix.len) ||
+						(strncasecmp(rr->nameaddr.uri.s,th_uri_prefix.s,
+									th_uri_prefix.len)!=0)))
+				{
+					LM_DBG("rr %d is not encoded: [%.*s]", i,
+							rr->nameaddr.uri.len, rr->nameaddr.uri.s);
+					rr = rr->next;
+					continue;
+				}
+
 				if(th_get_uri_param_value(&rr->nameaddr.uri, &th_uparam_name,
 							&eval)<0 || eval.len<=0)
 					return -1;
-	
+
 				out.s = th_mask_decode(eval.s, eval.len,
 							&th_uparam_prefix, 0, &out.len);
 
@@ -710,18 +747,32 @@ int th_unmask_ruri(sip_msg_t *msg)
 	struct lump* l;
 	str out;
 
+	/* Do nothing if ruri is not encoded */
+	if (th_uri_prefix_checks && ((REQ_LINE(msg).uri.len<th_uri_prefix.len) ||
+			(strncasecmp(REQ_LINE(msg).uri.s, th_uri_prefix.s,
+						th_uri_prefix.len)!=0)))
+	{
+		LM_DBG("ruri [%.*s] is not encoded",REQ_LINE(msg).uri.len,REQ_LINE(msg).uri.s);
+		return 0;
+	}
+
 	if(th_get_uri_param_value(&REQ_LINE(msg).uri, &th_uparam_name, &eval)<0
-			|| eval.len<=0)
+			|| eval.len<=0) {
+		LM_DBG("no uri param [%.*s] in [%.*s]\n",
+				th_uparam_name.len, th_uparam_name.s,
+				REQ_LINE(msg).uri.len,REQ_LINE(msg).uri.s);
 		return -1;
-	
+	}
+
 	out.s = th_mask_decode(eval.s, eval.len,
 				&th_uparam_prefix, 0, &out.len);
 	if(out.s==NULL)
 	{
-		LM_ERR("cannot decode r-uri\n");
+		LM_ERR("cannot decode r-uri [%.*s]\n",
+				REQ_LINE(msg).uri.len,REQ_LINE(msg).uri.s);
 		return -1;
 	}
-					
+
 	LM_DBG("+decoded: %d: [%.*s]\n", out.len, out.len, out.s);
 	l=del_lump(msg, REQ_LINE(msg).uri.s-msg->buf, REQ_LINE(msg).uri.len, 0);
 	if (l==0)
@@ -763,6 +814,15 @@ int th_unmask_refer_to(sip_msg_t *msg)
 	}
 
 	uri = &(get_refer_to(msg)->uri);
+
+	/* Do nothing if refer_to is not encoded */
+	if (th_uri_prefix_checks && ((uri->len<th_uri_prefix.len)
+			|| (strncasecmp(uri->s, th_uri_prefix.s, th_uri_prefix.len)!=0)))
+	{
+		LM_DBG("refer-to [%.*s] is not encoded",uri->len,uri->s);
+		return 0;
+	}
+
 	if(th_get_uri_param_value(uri, &th_uparam_name, &eval)<0
 			|| eval.len<=0)
 		return -1;
@@ -894,7 +954,7 @@ int th_add_via_cookie(sip_msg_t *msg, struct via_body *via)
 		LM_ERR("failed adding cookie to via [%p]\n", via);
 		return -1;
 	}
-	
+
 	out.len = 1+th_cookie_name.len+1+th_cookie_value.len+1;
 	out.s = (char*)pkg_malloc(out.len+1);
 	if(out.s==0)
@@ -1094,7 +1154,7 @@ int th_route_direction(sip_msg_t *msg)
 		LM_DBG("no route header - downstream\n");
 		return 0;
 	}
-	if (parse_rr(msg->route) < 0) 
+	if (parse_rr(msg->route) < 0)
 	{
 		LM_ERR("failed to parse route header\n");
 		return -1;

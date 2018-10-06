@@ -1,6 +1,4 @@
 /*
- * $Id$
- *
  * UNIXODBC module core functions
  *
  * Copyright (C) 2005-2006 Marco Lorrai
@@ -22,10 +20,6 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  *
- *
- * History:
- * --------
- *  2005-12-01  initial commit (chgen)
  */
 
 
@@ -69,11 +63,20 @@ int db_unixodbc_fetch_result(const db1_con_t* _h, db1_res_t** _r, const int nrow
  */
 int db_unixodbc_raw_query(const db1_con_t* _h, const str* _s, db1_res_t** _r);
 
+/*! \brief
+ *  * Raw SQL query via async framework
+ *   */
+int db_unixodbc_raw_query_async(const db1_con_t* _h, const str* _s);
+
 /*
  * Insert a row into table
  */
 int db_unixodbc_insert(const db1_con_t* _h, const db_key_t* _k, const db_val_t* _v, const int _n);
 
+/*! \brief
+ *  * Insert a row into table via async framework
+ *   */
+int db_unixodbc_insert_async(const db1_con_t* _h, const db_key_t* _k, const db_val_t* _v, const int _n);
 /*
  * Delete a row from table
  */

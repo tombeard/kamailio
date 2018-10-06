@@ -603,7 +603,7 @@ modparam("tm", "blst_503_max_timeout", 604800)
 		Change the value carefully, because requests that doesn't get
 		a provisional response (everything but INVITE) can easily
 		cause the next hop to be inserted into the blacklist
-		by mistake. For exmaple the next hop is a proxy, it is alive,
+		by mistake. For example the next hop is a proxy, it is alive,
 		but waiting for the response of the UAS, and has higher
 		fr_timer value.
 	</para>
@@ -1019,7 +1019,7 @@ modparam("tm", "callid_matching", 1)
 	<section id="tm.p.pass_provisional_replies">
 	<title><varname>pass_provisional_replies</varname> (integer)</title>
 	<para>
-		If set, TMCB_LOCAL_REPONSE_OUT tm registered callbacks will be called
+		If set, TMCB_LOCAL_RESPONSE_OUT tm registered callbacks will be called
 		also for provisional replies.
 	</para>
 	<para>
@@ -1411,7 +1411,7 @@ modparam("tm", "dns_reuse_rcv_socket", 1)
 		<title><varname>xavp_contact</varname> (string)</title>
 		<para>
 		The name of XAVP storing the attributes per contact. This must be the same as
-		the usrloc parameter <varname>xavp_contacts</varname>.
+		the usrloc parameter <varname>xavp_contact</varname>.
 		</para>
 		<para>
 		<emphasis>
@@ -1453,6 +1453,33 @@ function ksr_tm_event(evname)
 	KSR.info("===== htable module triggered event: " .. evname .. "\n");
 	return 1;
 end
+...
+</programlisting>
+		</example>
+	</section>
+
+	<section id="tm.p.relay_100">
+		<title><varname>relay_100</varname> (str)</title>
+		<para>
+			This parameter controls whether or not a SIP 100 response is proxied.
+			Note that this is not valid behavior when operating in stateful mode
+			per RFC 3261 Section 21.1.1, and therefore is useful only when
+			operating as a stateless proxy.
+			When using this feature, it is possible to control which 100 responses
+			are proxied and which are not by detecting whether they are part of
+			an existing transaction and setting up the appropriate logic in
+			onreply_route.
+		</para>
+		<para>
+		<emphasis>
+			Default value is 0 (disabled).
+		</emphasis>
+		</para>
+		<example>
+		<title>Set <varname>relay_100</varname> parameter</title>
+		<programlisting format="linespecific">
+...
+modparam("tm", "relay_100", 1)
 ...
 </programlisting>
 		</example>

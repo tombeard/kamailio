@@ -35,7 +35,8 @@
 	    <para>
 		<emphasis>cfg.get</emphasis> - Get the value of
 		a configuration variable. The function accepts two parameters:
-		group name, variable name. The group name can optionally contain the
+		group name, variable name, but if all the elements belonging to a certain group is wanted to be retrieved
+		then only the group name would suffice as the function parameter. The group name can optionally contain the
 		group instance id, for example foo[5].
 	    </para>
 		<example>
@@ -43,6 +44,7 @@
 		<programlisting format="linespecific">
 ...
 # &sercmd; cfg.get core debug
+# &sercmd; cfg.get tm
 ...
 </programlisting>
 		</example>
@@ -86,6 +88,22 @@
 		<programlisting format="linespecific">
 ...
 # &kamcmd; cfg.sets voicemail srv_ip "1.2.3.4"
+...
+</programlisting>
+                </example>
+        </section>
+        <section id="cfg_rpc.rpc.reset">
+    <title>cfg.reset</title>
+            <para>
+                <emphasis>cfg.reset</emphasis> - Reset the variable values of
+                a configuration group. The function accepts only one parameter:
+                group name.
+            </para>
+                <example>
+                <title>Use <varname>cfg.reset</varname> RPC command</title>
+                <programlisting format="linespecific">
+...
+# &sercmd; cfg.reset core
 ...
 </programlisting>
 		</example>

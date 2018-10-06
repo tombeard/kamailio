@@ -142,17 +142,15 @@ stat_export_t mod_stats[] = {
 /** module exports */
 struct module_exports exports = {
     "ims_icscf",
-    DEFAULT_DLFLAGS, /* dlopen flags */
-    cmds, /* Exported functions */
+    DEFAULT_DLFLAGS, 	/* dlopen flags */
+    cmds, 		/* Exported functions */
     params,
-    mod_stats, /* exported statistics */
-    0, /* exported MI functions */
-    0, /* exported pseudo-variables */
-    0, /* extra processes */
-    mod_init, /* module initialization function */
-    0,
-    0,
-    0 /* per-child init function */
+    0, 			/* exported RPC methods */
+    0, 			/* exported pseudo-variables */
+    0, 			/* reponse handling function */
+    mod_init, 		/* module initialization function */
+    0, 			/* per-child init function */
+    0			/* module destroy function */
 };
 
 /**
@@ -270,15 +268,14 @@ static int fixup_uar(void** param, int param_no)
 {
     if (strlen((char*) *param) <= 0) {
         LM_ERR("empty parameter %d not allowed\n", param_no);
-        return -1;
+	return -1;
     }
 
-    if (param_no == 1) {        //route name - static or dynamic string (config vars)
-        if (fixup_spve_null(param, param_no) < 0){
-            LM_ERR("fixup spve failed on %d\n", param_no);
-            return -1;
-        }
-        return 0;
+    switch (param_no) {
+	case 1:
+		return fixup_spve_null(param, param_no);
+	case 2:
+		return fixup_var_int_12(param, 1);
     }
     return 0;
     
@@ -291,11 +288,12 @@ static int fixup_lir(void** param, int param_no)
         return -1;
         }
 
-        if (param_no == 1) {        //route name - static or dynamic string (config vars)
-            if (fixup_spve_null(param, param_no) < 0)
-                return -1;
-            return 0;
-        } 
+    switch (param_no) {
+	case 1:
+		return fixup_spve_null(param, param_no);
+	case 2:
+		return fixup_var_int_12(param, 1);
+    }
         return 0;
     
 }

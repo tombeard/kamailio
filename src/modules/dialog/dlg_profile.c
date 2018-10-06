@@ -34,6 +34,7 @@
 #include "../../core/dprint.h"
 #include "../../core/ut.h"
 #include "../../core/route.h"
+#include "../../core/dset.h"
 #include "../../modules/tm/tm_load.h"
 #include "../../lib/srutils/sruid.h"
 #include "dlg_hash.h"
@@ -203,7 +204,7 @@ static struct dlg_profile_table* new_dlg_profile( str *name, unsigned int size,
 
 	/* set inner pointers */
 	profile->entries = (struct dlg_profile_entry*)(profile + 1);
-	profile->name.s = ((char*)profile->entries) + 
+	profile->name.s = ((char*)profile->entries) +
 		size*sizeof(struct dlg_profile_entry);
 
 	/* copy the name of the profile */
@@ -258,7 +259,7 @@ void destroy_dlg_profiles(void)
 /*!
  * \brief Destroy dialog linkers
  * \param linker dialog linker
- */ 
+ */
 void destroy_linkers(struct dlg_profile_link *linker)
 {
 	struct dlg_profile_entry *p_entry;
@@ -437,6 +438,10 @@ int profile_cleanup( struct sip_msg *msg, unsigned int flags, void *param )
 {
 	dlg_cell_t *dlg;
 
+	if(get_route_type()==LOCAL_ROUTE) {
+		return 1;
+	}
+
 	current_dlg_msg_id = 0;
 	current_dlg_msg_pid = 0;
 	dlg = dlg_get_ctx_dialog();
@@ -481,7 +486,7 @@ static void link_profile(struct dlg_profile_link *linker, str *vkey)
 		p_entry->first->prev->next = &linker->hash_linker;
 		p_entry->first->prev = &linker->hash_linker;
 	} else {
-		p_entry->first = linker->hash_linker.next 
+		p_entry->first = linker->hash_linker.next
 			= linker->hash_linker.prev = &linker->hash_linker;
 	}
 	p_entry->content ++;
@@ -590,8 +595,14 @@ int set_dlg_profile(struct sip_msg *msg, str *value, struct dlg_profile_table *p
 		linker->hash_linker.value.len = value->len;
 	}
 	sruid_next_safe(&_dlg_profile_sruid);
-	strcpy(linker->hash_linker.puid, _dlg_profile_sruid.uid.s);
-	linker->hash_linker.puid_len = _dlg_profile_sruid.uid.len;
+	if(_dlg_profile_sruid.uid.len<SRUID_SIZE) {
+		strcpy(linker->hash_linker.puid, _dlg_profile_sruid.uid.s);
+		linker->hash_linker.puid_len = _dlg_profile_sruid.uid.len;
+	} else {
+		LM_ERR("sruid size is too large\n");
+		shm_free(linker);
+		goto error;
+	}
 
 	if (dlg!=NULL) {
 		/* add linker directly to the dialog and profile */
@@ -637,7 +648,7 @@ int dlg_add_profile(dlg_cell_t *dlg, str *value, struct dlg_profile_table *profi
 
 	/* build new linker */
 	linker = (struct dlg_profile_link*)shm_malloc(
-		sizeof(struct dlg_profile_link) + (profile->has_value?(value->len+1):0) );
+		sizeof(struct dlg_profile_link)+(profile->has_value?(value->len+1):0));
 	if (linker==NULL) {
 		LM_ERR("no more shm memory\n");
 		goto error;
@@ -651,17 +662,30 @@ int dlg_add_profile(dlg_cell_t *dlg, str *value, struct dlg_profile_table *profi
 	/* set the value */
 	if (profile->has_value) {
 		linker->hash_linker.value.s = (char*)(linker+1);
-		memcpy( linker->hash_linker.value.s, value->s, value->len);
+		memcpy(linker->hash_linker.value.s, value->s, value->len);
 		linker->hash_linker.value.len = value->len;
 		linker->hash_linker.value.s[value->len] = '\0';
 	}
-	if(puid && puid->s && puid->len>0 && puid->len<SRUID_SIZE) {
-		strcpy(linker->hash_linker.puid, puid->s);
-		linker->hash_linker.puid_len = puid->len;
+	if(puid && puid->s && puid->len>0) {
+		if(puid->len<SRUID_SIZE) {
+			memcpy(linker->hash_linker.puid, puid->s, puid->len);
+			linker->hash_linker.puid_len = puid->len;
+		} else {
+			LM_ERR("puid size is too large\n");
+			shm_free(linker);
+			goto error;
+		}
 	} else {
 		sruid_next_safe(&_dlg_profile_sruid);
-		strcpy(linker->hash_linker.puid, _dlg_profile_sruid.uid.s);
-		linker->hash_linker.puid_len = _dlg_profile_sruid.uid.len;
+		if(_dlg_profile_sruid.uid.len<SRUID_SIZE) {
+			memcpy(linker->hash_linker.puid, _dlg_profile_sruid.uid.s,
+					_dlg_profile_sruid.uid.len);
+			linker->hash_linker.puid_len = _dlg_profile_sruid.uid.len;
+		} else {
+			LM_ERR("sruid size is too large\n");
+			shm_free(linker);
+			goto error;
+		}
 	}
 	linker->hash_linker.expires = expires;
 	linker->hash_linker.flags = flags;
@@ -847,10 +871,45 @@ int	is_known_dlg(struct sip_msg *msg) {
 	dlg_cell_t *dlg;
 
 	dlg = dlg_get_msg_dialog(msg);
-	
+
 	if(dlg == NULL)
 		return -1;
 
+	dlg_release(dlg);
+
+	return 1;
+}
+
+/**
+ *
+ */
+int dlg_set_ruri(sip_msg_t *msg)
+{
+	dlg_cell_t *dlg;
+	unsigned int dir;
+	int leg;
+
+	dlg = dlg_lookup_msg_dialog(msg, &dir);
+	if(dlg == NULL) {
+		LM_DBG("no dialog found\n");
+		return -1;
+	}
+
+	if(dir==DLG_DIR_DOWNSTREAM) {
+		leg = DLG_CALLEE_LEG;
+	} else {
+		leg = DLG_CALLER_LEG;
+	}
+	if(dlg->contact[leg].s==0 || dlg->contact[leg].len==0) {
+		LM_NOTICE("no contact uri (leg: %d)\n", leg);
+		dlg_release(dlg);
+		return -1;
+	}
+	if(rewrite_uri(msg, &dlg->contact[leg])<0) {
+		LM_ERR("failed to rewrite uri (leg: %d)\n", leg);
+		dlg_release(dlg);
+		return -1;
+	}
 	dlg_release(dlg);
 
 	return 1;
@@ -863,14 +922,14 @@ int	is_known_dlg(struct sip_msg *msg) {
  * \param timeout The dialog timeout to apply.
  */
 
-int	dlg_set_timeout_by_profile(struct dlg_profile_table *profile, 
-				   str *value, int timeout) 
+int	dlg_set_timeout_by_profile(struct dlg_profile_table *profile,
+				   str *value, int timeout)
 {
 	unsigned int		i = 0;
 	dlg_cell_t		*this_dlg = NULL;
 	struct dlg_profile_hash	*ph = NULL;
 
-	/* Private structure necessary for manipulating dialog 
+	/* Private structure necessary for manipulating dialog
          * timeouts outside of profile locks.  Admittedly, an
          * ugly hack, but avoids some concurrency issues.
          */
@@ -883,7 +942,7 @@ int	dlg_set_timeout_by_profile(struct dlg_profile_table *profile,
 
 	map_head = NULL;
 
-	/* If the profile has no value, iterate through every 
+	/* If the profile has no value, iterate through every
 	 * node and set its timeout.
 	 */
 
@@ -894,12 +953,12 @@ int	dlg_set_timeout_by_profile(struct dlg_profile_table *profile,
 			ph = profile->entries[i].first;
 
 			if(!ph) continue;
-			
-			do { 
+
+			do {
 				struct dlg_map_list *d = malloc(sizeof(struct dlg_map_list));
 
 				if(!d)
-					return -1;
+					goto error;
 
 				memset(d, 0, sizeof(struct dlg_map_list));
 
@@ -912,15 +971,13 @@ int	dlg_set_timeout_by_profile(struct dlg_profile_table *profile,
 					d->next = map_head;
 					map_head = d;
 				}
-	
+
 				ph = ph->next;
 			} while(ph != profile->entries[i].first);
-		} 
+		}
 
 		lock_release(&profile->lock);
-	}
-
-	else {
+	} else {
 		i = calc_hash_profile(value, NULL, profile);
 
 		lock_get(&profile->lock);
@@ -930,11 +987,11 @@ int	dlg_set_timeout_by_profile(struct dlg_profile_table *profile,
 		if(ph) {
 			do {
 				if(ph && value->len == ph->value.len &&
-				   memcmp(value->s, ph->value.s, value->len) == 0) {
+						memcmp(value->s, ph->value.s, value->len) == 0) {
 					struct dlg_map_list *d = malloc(sizeof(struct dlg_map_list));
 
 					if(!d)
-						return -1;
+						goto error;
 
 					memset(d, 0, sizeof(struct dlg_map_list));
 
@@ -957,7 +1014,7 @@ int	dlg_set_timeout_by_profile(struct dlg_profile_table *profile,
 	}
 
 	/* Walk the list and bulk-set the timeout */
-	
+
 	for(map_scan = map_head; map_scan != NULL; map_scan = map_scan_next) {
 		map_scan_next = map_scan->next;
 
@@ -965,19 +1022,23 @@ int	dlg_set_timeout_by_profile(struct dlg_profile_table *profile,
 
 		if(!this_dlg) {
 			LM_CRIT("Unable to find dialog %d:%d\n", map_scan->h_entry, map_scan->h_id);
-		} else if(this_dlg->state >= DLG_STATE_EARLY) {	
+		} else if(this_dlg->state >= DLG_STATE_EARLY) {
 			if(update_dlg_timeout(this_dlg, timeout) < 0) {
-               			LM_ERR("Unable to set timeout on %d:%d\n", map_scan->h_entry,
+				LM_ERR("Unable to set timeout on %d:%d\n", map_scan->h_entry,
 					map_scan->h_id);
 			}
-
-	                dlg_release(this_dlg);
+			dlg_release(this_dlg);
 		}
-
 		free(map_scan);
 	}
 
 	return 0;
+error:
+	for(map_scan = map_head; map_scan != NULL; map_scan = map_scan_next) {
+		map_scan_next = map_scan->next;
+		free(map_scan);
+	}
+	return -1;
 }
 
 

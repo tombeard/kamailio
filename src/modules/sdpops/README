@@ -35,7 +35,7 @@ Daniel-Constantin Mierla
               4.7. sdp_with_active_media(type)
               4.8. sdp_remove_media(type)
               4.9. sdp_with_transport(type)
-              4.10. sdp_with_transport_like(string)
+              4.10. sdp_with_transport_like(type)
               4.11. sdp_transport(pv)
               4.12. sdp_remove_transport(type)
               4.13. sdp_with_codecs_by_id(list)
@@ -45,6 +45,10 @@ Daniel-Constantin Mierla
               4.17. sdp_content([sloppy])
               4.18. sdp_with_ice()
               4.19. sdp_get_line_startswith(avpvar, string)
+
+        5. Exported Variables
+
+              5.1. $sdp( )
 
    List of Examples
 
@@ -90,7 +94,7 @@ Chapter 1. Admin Guide
         4.7. sdp_with_active_media(type)
         4.8. sdp_remove_media(type)
         4.9. sdp_with_transport(type)
-        4.10. sdp_with_transport_like(string)
+        4.10. sdp_with_transport_like(type)
         4.11. sdp_transport(pv)
         4.12. sdp_remove_transport(type)
         4.13. sdp_with_codecs_by_id(list)
@@ -100,6 +104,10 @@ Chapter 1. Admin Guide
         4.17. sdp_content([sloppy])
         4.18. sdp_with_ice()
         4.19. sdp_get_line_startswith(avpvar, string)
+
+   5. Exported Variables
+
+        5.1. $sdp( )
 
 1. Overview
 
@@ -142,7 +150,7 @@ Chapter 1. Admin Guide
    4.7. sdp_with_active_media(type)
    4.8. sdp_remove_media(type)
    4.9. sdp_with_transport(type)
-   4.10. sdp_with_transport_like(string)
+   4.10. sdp_with_transport_like(type)
    4.11. sdp_transport(pv)
    4.12. sdp_remove_transport(type)
    4.13. sdp_with_codecs_by_id(list)
@@ -241,7 +249,7 @@ sdp_keep_codecs_by_id("0,8,3", "audio");
    comma separated list of codec names. The parameter can be a static
    string or a variable holding the list of codec names.
 
-   Note that you have to explicitely keep 'telephone-event' in the list of
+   Note that you have to explicitly keep 'telephone-event' in the list of
    names if you want to keep DTMF attributes.
 
    Optional parameter mtype can be provided to apply the operations only
@@ -298,6 +306,26 @@ if(sdp_with_active_media("video"))
    Remove the streams that match on 'm=type ...' line. The parameter can
    be static string or variable holding the media type.
 
+   Note: If this is executed on a request, the callee should reply without
+   the Media too. However, RFC 3264 mandates, that the reply should
+   contain the exact same number of "m=" lines as the request.
+
+
+     6 Generating the Answer
+
+     [...]
+
+     For each "m=" line in the offer, there MUST be a corresponding "m="
+     line in the answer. The answer MUST contain exactly the same number of
+     "m=" lines as the offer. This allows for streams to be matched up based
+     on their order. This implies that if the offer contained zero "m="
+     lines, the answer MUST contain zero "m=" lines.
+
+                                                                  --RFC 3264
+
+   So this may not work with all Endpoints, especially if they follow RFC
+   3264 precisely (e.g. JSSIP).
+
    This function can be used from ANY_ROUTE.
 
    Example 1.8. sdp_remove_media usage
@@ -309,26 +337,27 @@ sdp_remove_media("video");
 4.9.  sdp_with_transport(type)
 
    Return true of the SDP has 'media=media port type ...' line. Useful to
-   check the transport of the RTP sessions, such as 'RTP/AVP', 'RTP/SAVP'
-   or 'RTP/SAVPF'. The parameter can be static string or variable holding
-   the transport type.
+   check the transport of the RTP sessions, such as 'RTP/AVP', 'RTP/SAVP',
+   'RTP/SAVPF' or 'UDP/TLS/RTP/SAVPF'. The parameter can be static string
+   or variable holding the transport type. The function does an exact
+   match of the strings.
 
    This function can be used from ANY_ROUTE.
 
    Example 1.9. sdp_with_transport usage
 ...
 # check for RTP/SAVP stream
-if(sdp_with_transport("RTP/SAVP"))
+if(sdp_with_transport("UDP/TLS/RTP/SAVPF"))
 {
-    # the session has a SRTP/SAVP stream
+    # the session has a UDP/TLS/RTP/SAVPF stream
 }
 ...
 
-4.10.  sdp_with_transport_like(string)
+4.10.  sdp_with_transport_like(type)
 
    Returns true if the SDP has 'media=media port type ...' line, where
-   type contains string. The parameter can be static string or variable
-   holding a string.
+   type contains the string in the parameter. The parameter can be static
+   string or variable holding a string.
 
    This function can be used from ANY_ROUTE.
 
@@ -460,7 +489,8 @@ if(sdp_with_ice()) {
 
    Store the search part of SDP body message with line beginning with
    'string' in an AVP. Return 1 if 'string' is found in SDP, -1 on error
-   and -2 if there is no SDP part in the message body.
+   and -2 if there is no SDP part in the message body. The second
+   parameter can contain pseudo-variables.
 
    This function can be used from ANY_ROUTE.
 
@@ -470,3 +500,18 @@ if(sdp_get_line_startswith("$avp(mline)", "m=")) {
         xlog("m-line: $avp(mline)\n");
 }
 ...
+
+5. Exported Variables
+
+   5.1. $sdp( )
+
+5.1. $sdp( )
+
+   Access to SDP attributes
+     * $sdp(body) - full SDP body (read only)
+     * $sdp(sess_version) - sess-version -attribute from SDP o= -line.
+       When set to special value -1, current value is incremented. (read +
+       write)
+
+   Exported pseudo-variables are also documented at
+   https://www.kamailio.org/wiki/

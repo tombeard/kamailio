@@ -91,8 +91,7 @@ int ht_init_tables(void);
 int ht_destroy(void);
 int ht_set_cell(ht_t *ht, str *name, int type, int_str *val, int mode);
 int ht_del_cell(ht_t *ht, str *name);
-ht_cell_t* ht_cell_value_add(ht_t *ht, str *name, int val, int mode,
-		ht_cell_t *old);
+ht_cell_t* ht_cell_value_add(ht_t *ht, str *name, int val, ht_cell_t *old);
 
 int ht_dbg(void);
 ht_cell_t* ht_cell_pkg_copy(ht_t *ht, str *name, ht_cell_t *old);
@@ -110,10 +109,20 @@ void ht_handle_expired_record(ht_t *ht, ht_cell_t *cell);
 int ht_set_cell_expire(ht_t *ht, str *name, int type, int_str *val);
 int ht_get_cell_expire(ht_t *ht, str *name, unsigned int *val);
 
+int ht_set_cell_ex(ht_t *ht, str *name, int type, int_str *val, int mode,
+		int exv);
+
 int ht_rm_cell_re(str *sre, ht_t *ht, int mode);
 int ht_count_cells_re(str *sre, ht_t *ht, int mode);
 ht_t *ht_get_root(void);
 int ht_reset_content(ht_t *ht);
+
+#define HT_RM_OP_EQ	1
+#define HT_RM_OP_NE	2
+#define HT_RM_OP_SW	3
+#define HT_RM_OP_RE	4
+int ht_rm_cell_op(str *sre, ht_t *ht, int mode, int op);
+int ht_has_cell_op_str(str *sre, ht_t *ht, int mode, int op);
 
 void ht_iterator_init(void);
 int ht_iterator_start(str *iname, str *hname);

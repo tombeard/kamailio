@@ -41,6 +41,8 @@
 #include "../../modules/tm/tm_load.h"
 #include "../rr/api.h"
 #include "../../core/flags.h"
+#include "../../core/mod_fix.h"
+#include "../../core/kemi.h"
 #include "acc.h"
 #include "acc_api.h"
 #include "acc_mod.h"
@@ -60,30 +62,14 @@ struct acc_enviroment acc_env;
 #define is_log_acc_on(_rq)     is_acc_flag_set(_rq,log_flag)
 #define is_log_mc_on(_rq)      is_acc_flag_set(_rq,log_missed_flag)
 
-#ifdef SQL_ACC
-	#define is_db_acc_on(_rq)     is_acc_flag_set(_rq,db_flag)
-	#define is_db_mc_on(_rq)      is_acc_flag_set(_rq,db_missed_flag)
-#else
-	#define is_db_acc_on(_rq)     (0)
-	#define is_db_mc_on(_rq)      (0)
-#endif
-
-
-#ifdef DIAM_ACC
-	#define is_diam_acc_on(_rq)     is_acc_flag_set(_rq,diameter_flag)
-	#define is_diam_mc_on(_rq)      is_acc_flag_set(_rq,diameter_missed_flag)
-#else
-	#define is_diam_acc_on(_rq)     (0)
-	#define is_diam_mc_on(_rq)      (0)
-#endif
+#define is_db_acc_on(_rq)     is_acc_flag_set(_rq,db_flag)
+#define is_db_mc_on(_rq)      is_acc_flag_set(_rq,db_missed_flag)
 
 #define is_acc_on(_rq) \
-	( (is_log_acc_on(_rq)) || (is_db_acc_on(_rq)) \
-	|| (is_diam_acc_on(_rq)) )
+	( (is_log_acc_on(_rq)) || (is_db_acc_on(_rq)) || (is_eng_acc_on(_rq)) )
 
 #define is_mc_on(_rq) \
-	( (is_log_mc_on(_rq)) || (is_db_mc_on(_rq)) \
-	|| (is_diam_mc_on(_rq)) )
+	( (is_log_mc_on(_rq)) || (is_db_mc_on(_rq)) || (is_eng_mc_on(_rq)) )
 
 #define skip_cancel(_rq) \
 	(((_rq)->REQ_METHOD==METHOD_CANCEL) && report_cancels==0)
@@ -134,7 +120,7 @@ static inline void env_set_code_status( int code, struct sip_msg *reply)
 	} else {
 		acc_env.code_s = reply->first_line.u.reply.status;
 		hf = NULL;
-	        if (reason_from_hf) {
+		if (reason_from_hf) {
 			/* TODO: take reason from all Reason headers */
 			if(parse_headers(reply, HDR_EOH_F, 0) < 0) {
 				LM_ERR("error parsing headers\n");
@@ -219,8 +205,47 @@ int w_acc_log_request(struct sip_msg *rq, char *comment, char *foo)
 	return acc_log_request(rq);
 }
 
+static int acc_param_parse(str *s, acc_param_t *accp)
+{
+	if(s==NULL || s->s==NULL || s->len<=0 || accp==NULL) {
+		LM_ERR("invalid parameters\n");
+		return -1;
+	}
+	memset(accp, 0, sizeof(acc_param_t));
+	accp->reason.s = s->s;
+	accp->reason.len = s->len;
+	if (strchr(s->s, PV_MARKER)!=NULL) {
+		/* there is a cfg variable - not through kemi */
+		LM_ERR("cfg variable detected - not supported\n");
+		return -1;
+	} else {
+		if(acc_parse_code(s->s, accp)<0) {
+			LM_ERR("failed to parse: [%.*s] (expected [code text])\n",
+					s->len, s->s);
+			return -1;
+		}
+	}
+	return 0;
+}
 
-#ifdef SQL_ACC
+int ki_acc_log_request(sip_msg_t *rq, str *comment)
+{
+	acc_param_t accp;
+
+	if(acc_param_parse(comment, &accp)<0) {
+		LM_ERR("failed execution\n");
+		return -1;
+	}
+	if (acc_preparse_req(rq)<0)
+		return -1;
+
+	env_set_to(rq->to);
+	env_set_comment(&accp);
+	env_set_text(ACC_REQUEST, ACC_REQUEST_LEN);
+	return acc_log_request(rq);
+}
+
+
 int acc_db_set_table_name(struct sip_msg *msg, void *param, str *table)
 {
 #define DB_TABLE_NAME_SIZE	64
@@ -270,22 +295,76 @@ int w_acc_db_request(struct sip_msg *rq, char *comment, char *table)
 	env_set_comment(param);
 	return acc_db_request(rq);
 }
-#endif
 
-#ifdef DIAM_ACC
-int w_acc_diam_request(struct sip_msg *rq, char *comment, char *foo)
+int ki_acc_db_request(sip_msg_t *rq, str *comment, str *dbtable)
 {
-	struct acc_param *param = (struct acc_param*)comment;
+	acc_param_t accp;
+
+	if(acc_param_parse(comment, &accp)<0) {
+		LM_ERR("failed execution\n");
+		return -1;
+	}
 	if (acc_preparse_req(rq)<0)
 		return -1;
-	if(acc_get_param_value(rq, param)<0)
+	if(acc_db_set_table_name(rq, NULL, dbtable)<0) {
+		LM_ERR("cannot set table name\n");
 		return -1;
-	env_set_to( rq->to );
-	env_set_comment(param);
-	return acc_diam_request(rq);
+	}
+	env_set_to(rq->to);
+	env_set_comment(&accp);
+	return acc_db_request(rq);
 }
-#endif
 
+int ki_acc_request(sip_msg_t *rq, str *comment, str *dbtable)
+{
+	acc_param_t accp;
+	int ret;
+
+	if(acc_param_parse(comment, &accp)<0) {
+		LM_ERR("failed execution\n");
+		return -1;
+	}
+	if (acc_preparse_req(rq)<0)
+		return -1;
+
+	if(acc_db_set_table_name(rq, NULL, dbtable)<0) {
+		LM_ERR("cannot set table name\n");
+		return -1;
+	}
+
+	env_set_to(rq->to);
+	env_set_comment(&accp);
+	env_set_text(ACC_REQUEST, ACC_REQUEST_LEN);
+	ret = acc_log_request(rq);
+	if(ret<0) {
+		LM_ERR("acc log request failed\n");
+	}
+	if(acc_is_db_ready()) {
+		ret = acc_db_request(rq);
+		if(ret<0) {
+			LM_ERR("acc db request failed\n");
+		}
+	}
+
+	return ret;
+}
+
+int w_acc_request(sip_msg_t *rq, char *comment, char *table)
+{
+	str scomment;
+	str stable;
+
+	if(fixup_get_svalue(rq, (gparam_t *)comment, &scomment)<0) {
+		LM_ERR("failed to get comment parameter\n");
+		return -1;
+	}
+	if(fixup_get_svalue(rq, (gparam_t *)table, &stable)<0) {
+		LM_ERR("failed to get table parameter\n");
+		return -1;
+	}
+
+	return ki_acc_request(rq, &scomment, &stable);
+}
 
 
 /* prepare message and transaction context for later accounting */
@@ -328,32 +407,45 @@ void acc_onreq( struct cell* t, int type, struct tmcb_params *ps )
 
 /* is this reply of interest for accounting ? */
 static inline int should_acc_reply(struct sip_msg *req, struct sip_msg *rpl,
-				   int code)
+			int code)
 {
-    unsigned int i;
+	unsigned int i;
 
-	/* negative transactions reported otherwise only if explicitly 
+	LM_DBG("probing acc state - code: %d flags: 0x%x\n", code,
+			(req)?req->flags:0);
+	/* negative transactions reported otherwise only if explicitly
 	 * demanded */
-
-    if (code >= 300) {
-	if (!is_failed_acc_on(req)) return 0;
-	i = 0;
-	while (failed_filter[i] != 0) {
-	    if (failed_filter[i] == code) return 0;
-	    i++;
+	if (code >= 300) {
+		if (!is_failed_acc_on(req)) {
+			LM_DBG("failed acc is off\n");
+			return 0;
+		}
+		i = 0;
+		while (failed_filter[i] != 0) {
+			if (failed_filter[i] == code) {
+				LM_DBG("acc code in filter: %d\n", code);
+				return 0;
+			}
+			i++;
+		}
+		LM_DBG("failed acc is on\n");
+		return 1;
 	}
-	return 1;
-    }
 
-    if ( !is_acc_on(req) )
-	return 0;
-	
-    if ( code<200 && !(early_media &&
-		       parse_headers(rpl,HDR_CONTENTLENGTH_F, 0) == 0 &&
-		       rpl->content_length && get_content_length(rpl) > 0))
-	return 0;
+	if ( !is_acc_on(req) ) {
+		LM_DBG("acc is off\n");
+		return 0;
+	}
 
-    return 1; /* seed is through, we will account this reply */
+	if ( code<200 && !(early_media &&
+				parse_headers(rpl,HDR_CONTENTLENGTH_F, 0) == 0 &&
+				rpl->content_length && get_content_length(rpl) > 0)) {
+		LM_DBG("early media acc is off\n");
+		return 0;
+	}
+
+	LM_DBG("acc is on\n");
+	return 1; /* seed is through, we will account this reply */
 }
 
 
@@ -365,8 +457,10 @@ static inline void acc_onreply_in(struct cell *t, struct sip_msg *req,
 	/* don't parse replies in which we are not interested */
 	/* missed calls enabled ? */
 	if ( (reply && reply!=FAKED_REPLY) && (should_acc_reply(req,reply,code)
-	|| (is_invite(t) && code>=300 && is_mc_on(req))) ) {
-		parse_headers(reply, HDR_TO_F, 0 );
+			|| (is_invite(t) && code>=300 && is_mc_on(req))) ) {
+		if(parse_headers(reply, HDR_TO_F, 0)<0) {
+			LM_ERR("failed to parse headers\n");
+		}
 	}
 }
 
@@ -380,6 +474,7 @@ static inline void on_missed(struct cell *t, struct sip_msg *req,
 	int flags_to_reset = 0;
 	int br = -1;
 
+	LM_DBG("preparing to report the record\n");
 	/* get winning branch index, if set */
 	if (t->relayed_reply_branch>=0) {
 		br = t->relayed_reply_branch;
@@ -404,7 +499,7 @@ static inline void on_missed(struct cell *t, struct sip_msg *req,
 
 	/* we report on missed calls when the first
 	 * forwarding attempt fails; we do not wish to
-	 * report on every attempt; so we clear the flags; 
+	 * report on every attempt; so we clear the flags;
 	 */
 
 	if (is_log_mc_on(req)) {
@@ -412,7 +507,6 @@ static inline void on_missed(struct cell *t, struct sip_msg *req,
 		acc_log_request( req );
 		flags_to_reset |= log_missed_flag;
 	}
-#ifdef SQL_ACC
 	if (is_db_mc_on(req)) {
 		if(acc_db_set_table_name(req, db_table_mc_data, &db_table_mc)<0) {
 			LM_ERR("cannot set missed call db table name\n");
@@ -421,15 +515,6 @@ static inline void on_missed(struct cell *t, struct sip_msg *req,
 		acc_db_request( req );
 		flags_to_reset |= db_missed_flag;
 	}
-#endif
-
-/* DIAMETER */
-#ifdef DIAM_ACC
-	if (is_diam_mc_on(req)) {
-		acc_diam_request( req );
-		flags_to_reset |= diameter_missed_flag;
-	}
-#endif
 
 	/* run extra acc engines */
 	acc_run_engines(req, 1, &flags_to_reset);
@@ -463,8 +548,8 @@ static void acc_onreply(tm_cell_t *t, sip_msg_t *req, sip_msg_t *reply, int code
 	void *mend;
 
 	/* acc_onreply is bound to TMCB_REPLY which may be called
-	   from _reply, like when FR hits; we should not miss this
-	   event for missed calls either */
+	 * from _reply, like when FR hits; we should not miss this
+	 * event for missed calls either */
 	if (is_invite(t) && code>=300 && is_mc_on(req) )
 		on_missed(t, req, reply, code);
 
@@ -515,7 +600,6 @@ static void acc_onreply(tm_cell_t *t, sip_msg_t *req, sip_msg_t *reply, int code
 		env_set_text( ACC_ANSWERED, ACC_ANSWERED_LEN);
 		acc_log_request(preq);
 	}
-#ifdef SQL_ACC
 	if (is_db_acc_on(preq)) {
 		if(acc_db_set_table_name(preq, db_table_acc_data, &db_table_acc)<0) {
 			LM_ERR("cannot set acc db table name\n");
@@ -523,13 +607,6 @@ static void acc_onreply(tm_cell_t *t, sip_msg_t *req, sip_msg_t *reply, int code
 			acc_db_request(preq);
 		}
 	}
-#endif
-
-/* DIAMETER */
-#ifdef DIAM_ACC
-	if (is_diam_acc_on(preq))
-		acc_diam_request(preq);
-#endif
 
 	/* run extra acc engines */
 	acc_run_engines(preq, 0, NULL);
@@ -571,7 +648,6 @@ static inline void acc_onack( struct cell* t, struct sip_msg *req,
 		env_set_text( ACC_ACKED, ACC_ACKED_LEN);
 		acc_log_request( ack );
 	}
-#ifdef SQL_ACC
 	if (is_db_acc_on(req)) {
 		if(acc_db_set_table_name(ack, db_table_acc_data, &db_table_acc)<0) {
 			LM_ERR("cannot set acc db table name\n");
@@ -579,18 +655,9 @@ static inline void acc_onack( struct cell* t, struct sip_msg *req,
 		}
 		acc_db_request( ack );
 	}
-#endif
-
-/* DIAMETER */
-#ifdef DIAM_ACC
-	if (is_diam_acc_on(req)) {
-		acc_diam_request(ack);
-	}
-#endif
 
 	/* run extra acc engines */
 	acc_run_engines(ack, 0, NULL);
-	
 }
 
 
@@ -626,4 +693,3 @@ static void tmcb_func( struct cell* t, int type, struct tmcb_params *ps )
 		acc_onreply_in( t, ps->req, ps->rpl, ps->code);
 	}
 }
-

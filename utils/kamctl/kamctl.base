@@ -101,7 +101,7 @@ fi
 ##### ------------------------------------------------ #####
 ### configuration for starting/stopping kamailio
 if [ -z "$PID_FILE" ] ; then
-	PID_FILE=/var/run/kamailio.pid
+	PID_FILE=/var/run/kamailio/kamailio.pid
 fi
 if [ -z "$SYSLOG" ] ; then
 	SYSLOG=1 # 0=output to console, 1=output to syslog
@@ -135,6 +135,9 @@ if [ -z "$VERIFY_ACL" ] ; then
 fi
 if [ -z "$ACL_GROUPS" ] ; then
 	ACL_GROUPS="local ld int voicemail free-pstn"
+fi
+if [ -z "$VERIFY_USER" ] ; then
+	VERIFY_USER=1
 fi
 
 ##### ----------------------------------------------- #####
@@ -534,6 +537,36 @@ cat <<EOF
  dialplan rmrule <dpid> <prio> ..... removes all the gived dpid/prio entries
 EOF
 }
+
+usage_ksr_srv() {
+	echo
+	mecho " -- command 'srv' - server management commands"
+	echo
+cat <<EOF
+   * Examples: srv sockets
+   *           srv rpclist
+ srv sockets ................... show the list of listen sockets
+ srv aliases ................... show the list of server aliases
+ srv rpclist ................... show the list of server rpc commands
+EOF
+}
+USAGE_FUNCTIONS="$USAGE_FUNCTIONS usage_ksr_srv"
+
+usage_mtree() {
+	echo
+	mecho " -- command 'add|dump|reload|rm|show' - manage mtree"
+	echo
+cat <<EOF
+ mtree show <tname> .................. show db content
+ mtree dump [<tname>] ................ show cache content
+ mtree reload [<tname>] .............. reload db table into cache
+ mtree add <tname> <tprefix> <tvalue>
+             ......................... add a new entry
+ mtree rm <tname> <tprefix> .......... remove entries for given tname and tprefix
+EOF
+}
+USAGE_FUNCTIONS="$USAGE_FUNCTIONS usage_mtree"
+
 
 ##### ----------------------------------------------- #####
 #### Common functions

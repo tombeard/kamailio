@@ -45,22 +45,23 @@
 #include "../../core/sip_msg_clone.h"
 #include "../../core/data_lump.h"
 #include "../../core/data_lump_rpl.h"
+#include "../../core/kemi.h"
 #include "../../modules/xhttp/api.h"
 
 #include "jsonrpcs_mod.h"
-
-/** @addtogroup jsonrpc-s
- * @ingroup modules
- * @{
- *
- * <h1>Overview of Operation</h1>
- * This module provides jsonrpc over http server implementation.
- */
 
 /** @file
  *
  * This is the main file of jsonrpc-s module which contains all the functions
  * related to http processing, as well as the module interface.
+ */
+
+/** @addtogroup jsonrpc-s
+ * @ingroup modules
+ *
+ * <h1>Overview of Operation</h1>
+ * This module provides jsonrpc over http server implementation.
+ * @{
  */
 
 MODULE_VERSION
@@ -75,7 +76,7 @@ static str JSONRPC_CONTENT_TYPE_HTML = str_init("application/json");
 /*!< 0 - all available; 1 - http; 2 - fifo; 4 - datagram */
 static int jsonrpc_transport = 6; /* fifo + datagram */
 
-static int jsonrpc_pretty_format = 0;
+static int jsonrpc_pretty_format = 1;
 
 static int jsonrpc_register_rpc(void);
 
@@ -119,7 +120,8 @@ extern int jsonrpc_dgram_destroy(void);
  * being currently processed.
  * @sa rpc_ctx
  */
-static jsonrpc_ctx_t _jsonrpc_ctx;
+static jsonrpc_ctx_t _jsonrpc_ctx_global;
+static jsonrpc_ctx_t *_jsonrpc_ctx_active = NULL;
 
 static xhttp_api_t xhttp_api;
 
@@ -173,19 +175,17 @@ static pv_export_t mod_pvs[] = {
 };
 
 /** module exports */
-struct module_exports exports= {
-	"jsonrpcs",
+struct module_exports exports = {
+	"jsonrpcs",      /* module name */
 	DEFAULT_DLFLAGS, /* dlopen flags */
-	cmds,
-	params,
-	0,			/* exported statistics */
-	0,			/* exported MI functions */
-	mod_pvs,	/* exported pseudo-variables */
-	0,			/* extra processes */
-	mod_init,	/* module initialization function */
-	0,
-	mod_destroy,/* module destroy function */
-	child_init	/* per-child init function */
+	cmds,            /* cmd (cfg function) exports */
+	params,          /* param exports */
+	0,               /* RPC method exports */
+	mod_pvs,         /* pseudo-variables exports */
+	0,               /* response handling function */
+	mod_init,        /* module init function */
+	child_init,      /* per-child init function */
+	mod_destroy      /* module destroy function */
 };
 
 
@@ -276,6 +276,7 @@ static int jsonrpc_delayed_reply_ctx_init(jsonrpc_ctx_t* ctx)
 		if (jsonrpc_init_reply(ctx) < 0)
 			return -1;
 		jsonrpc_reset_plain_reply(ctx->jrpl->free_fn);
+		_jsonrpc_ctx_active = ctx;
 	}
 	return 0;
 }
@@ -298,13 +299,23 @@ static void jsonrpc_fault(jsonrpc_ctx_t* ctx, int code, char* fmt, ...)
 
 	jsonrpc_delayed_reply_ctx_init(ctx);
 
-	ctx->http_code = code;
+	if(code <= 100) {
+		ctx->http_code = 500;
+	} else {
+		ctx->http_code = code;
+	}
 	va_start(ap, fmt);
 	vsnprintf(jsonrpc_error_buf, JSONRPC_ERROR_REASON_BUF_LEN, fmt, ap);
 	va_end(ap);
-	ctx->http_text.len = strlen(jsonrpc_error_buf);
+	ctx->error_text.len = strlen(jsonrpc_error_buf);
+	ctx->error_text.s = jsonrpc_error_buf;
+	ctx->http_text.len = ctx->error_text.len;
 	ctx->http_text.s = jsonrpc_error_buf;
-	if(ctx->error_code == 0) ctx->error_code = -32000;
+	if(code == 0) {
+		ctx->error_code = -32000;
+	} else {
+		ctx->error_code = code;
+	}
 
 	return;
 }
@@ -347,8 +358,14 @@ static int jsonrpc_send(jsonrpc_ctx_t* ctx)
 					_jsonrpc_error_table[i].text.s,
 					_jsonrpc_error_table[i].text.len);
 			} else {
-				srjson_AddStrStrToObject(ctx->jrpl, nj,
-					"message", 7, "Unexpected Error", 16);
+				if(ctx->error_text.len>0) {
+					srjson_AddStrStrToObject(ctx->jrpl, nj,
+							"message", 7,
+							ctx->error_text.s, ctx->error_text.len);
+				} else {
+					srjson_AddStrStrToObject(ctx->jrpl, nj,
+							"message", 7, "Unexpected Error", 16);
+				}
 			}
 			srjson_AddItemToObject(ctx->jrpl, ctx->jrpl->root, "error", nj);
 		}
@@ -370,15 +387,26 @@ static int jsonrpc_send(jsonrpc_ctx_t* ctx)
 			ctx->rpl_node = 0;
 		}
 	}
-	nj = srjson_GetObjectItem(ctx->jreq, ctx->jreq->root, "id");
-	if(nj!=NULL) {
-		if(nj->valuestring!=NULL) {
+	if(ctx->jreq!=NULL && ctx->jreq->root!=NULL) {
+		nj = srjson_GetObjectItem(ctx->jreq, ctx->jreq->root, "id");
+		if(nj!=NULL) {
+			if(nj->valuestring!=NULL) {
+				srjson_AddStrStrToObject(ctx->jrpl, ctx->jrpl->root,
+						"id", 2,
+						nj->valuestring, strlen(nj->valuestring));
+			} else {
+				srjson_AddNumberToObject(ctx->jrpl, ctx->jrpl->root, "id",
+						nj->valuedouble);
+			}
+		}
+	} else {
+		if(ctx->jsrid_type == 1) {
 			srjson_AddStrStrToObject(ctx->jrpl, ctx->jrpl->root,
 					"id", 2,
-					nj->valuestring, strlen(nj->valuestring));
-		} else {
+					ctx->jsrid_val, strlen(ctx->jsrid_val));
+		} else if(ctx->jsrid_type == 2) {
 			srjson_AddNumberToObject(ctx->jrpl, ctx->jrpl->root, "id",
-					nj->valuedouble);
+					(double)(*(long*)ctx->jsrid_val));
 		}
 	}
 
@@ -391,6 +419,8 @@ static int jsonrpc_send(jsonrpc_ctx_t* ctx)
 		rbuf.len = strlen(rbuf.s);
 	}
 	if (rbuf.s!=NULL) {
+		LM_DBG("sending response with body: %p - %d %.*s\n", ctx->msg,
+				ctx->http_code, ctx->http_text.len, ctx->http_text.s);
 		if(ctx->msg) {
 			xhttp_api.reply(ctx->msg, ctx->http_code, &ctx->http_text,
 				&JSONRPC_CONTENT_TYPE_HTML, &rbuf);
@@ -400,6 +430,8 @@ static int jsonrpc_send(jsonrpc_ctx_t* ctx)
 			rbuf.s=NULL;
 		}
 	} else {
+		LM_DBG("sending response without body: %p - %d %.*s\n", ctx->msg,
+				ctx->http_code, ctx->http_text.len, ctx->http_text.s);
 		if(ctx->msg) {
 			xhttp_api.reply(ctx->msg, ctx->http_code, &ctx->http_text,
 					NULL, NULL);
@@ -644,7 +676,7 @@ static int jsonrpc_scan(jsonrpc_ctx_t* ctx, char* fmt, ...)
 		ctx->req_node = ctx->req_node->next;
 	}
 	/* error if there is still a scan char type and it is not optional */
-	if(*fmt && mandatory_param==1)
+	if(*fmt && *fmt!='*' && mandatory_param==1)
 		goto error;
 
 	va_end(ap);
@@ -741,9 +773,10 @@ static int jsonrpc_struct_add(srjson_t *jnode, char* fmt, ...)
 	}
 	isobject = (jnode->type==srjson_Object);
 
-	ctx = &_jsonrpc_ctx;
-	if(ctx->jrpl==NULL) {
-		LM_ERR("reply object not initialized in rpl context\n");
+	ctx = _jsonrpc_ctx_active;
+	if(ctx==NULL || ctx->jrpl==NULL) {
+		LM_ERR("reply object not initialized in rpl context %p - flags 0x%x\n",
+				ctx, (ctx)?ctx->flags:0);
 		return -1;
 	}
 
@@ -751,6 +784,7 @@ static int jsonrpc_struct_add(srjson_t *jnode, char* fmt, ...)
 	while(*fmt) {
 		mname.s = va_arg(ap, char*);
 		mname.len = (mname.s?strlen(mname.s):0);
+		if(mname.s==NULL) mname.s = "";
 
 		if (*fmt == '{' || *fmt == '[') {
 			void_ptr = va_arg(ap, void**);
@@ -810,9 +844,10 @@ static int jsonrpc_array_add(srjson_t *jnode, char* fmt, ...)
 		return -1;
 	}
 
-	ctx = &_jsonrpc_ctx;
-	if(ctx->jrpl==NULL) {
-		LM_ERR("reply object not initialized in rpl context\n");
+	ctx = _jsonrpc_ctx_active;
+	if(ctx==NULL || ctx->jrpl==NULL) {
+		LM_ERR("reply object not initialized in rpl context %p - flags 0x%x\n",
+				ctx, (ctx)?ctx->flags:0);
 		return -1;
 	}
 
@@ -870,9 +905,10 @@ static int jsonrpc_struct_printf(srjson_t *jnode, char* mname, char* fmt, ...)
 		return -1;
 	}
 
-	ctx = &_jsonrpc_ctx;
-	if(ctx->jrpl==NULL) {
-		LM_ERR("reply object not initialized in rpl context\n");
+	ctx = _jsonrpc_ctx_active;
+	if(ctx==NULL || ctx->jrpl==NULL) {
+		LM_ERR("reply object not initialized in rpl context %p - flags 0x%x\n",
+				ctx, (ctx)?ctx->flags:0);
 		return -1;
 	}
 
@@ -948,6 +984,7 @@ static struct rpc_delayed_ctx* jsonrpc_delayed_ctx_new(jsonrpc_ctx_t* ctx)
 	jsonrpc_ctx_t* r_ctx;
 	sip_msg_t* shm_msg;
 	int len;
+	srjson_t *nj = NULL;
 
 	ret=0;
 	shm_msg=0;
@@ -960,6 +997,22 @@ static struct rpc_delayed_ctx* jsonrpc_delayed_ctx_new(jsonrpc_ctx_t* ctx)
 
 	if (ctx->transport!=JSONRPC_TRANS_HTTP) {
 		LM_ERR("delayed response implemented only for HTTP transport\n");
+		return 0;
+	}
+
+	if(ctx->jreq==NULL || ctx->jreq->root==NULL) {
+		LM_ERR("invalid context attributes\n");
+		return 0;
+	}
+
+	nj = srjson_GetObjectItem(ctx->jreq, ctx->jreq->root, "id");
+	if(nj==NULL) {
+		LM_ERR("id attribute is missing\n");
+		return 0;
+	}
+	if(nj->valuestring!=NULL && strlen(nj->valuestring)>JSONRPC_ID_SIZE-1) {
+		LM_ERR("id attribute is too long (%lu/%d)\n", strlen(nj->valuestring),
+				JSONRPC_ID_SIZE);
 		return 0;
 	}
 	/* clone the sip msg */
@@ -982,6 +1035,14 @@ static struct rpc_delayed_ctx* jsonrpc_delayed_ctx_new(jsonrpc_ctx_t* ctx)
 	ctx->flags |= JSONRPC_DELAYED_REPLY_F;
 	r_ctx->msg=shm_msg;
 	r_ctx->msg_shm_block_size=len;
+
+	if(nj->valuestring!=NULL) {
+		strcpy(r_ctx->jsrid_val, nj->valuestring);
+		r_ctx->jsrid_type = 1;
+	} else {
+		*(long*)r_ctx->jsrid_val = (long)nj->valuedouble;
+		r_ctx->jsrid_type = 2;
+	}
 
 	return ret;
 error:
@@ -1039,6 +1100,7 @@ error:
 	r_ctx->msg=0;
 	dctx->reply_ctx=0;
 	shm_free(dctx);
+	_jsonrpc_ctx_active = NULL;
 
 	return;
 }
@@ -1046,11 +1108,12 @@ error:
 
 static int mod_init(void)
 {
+	memset(&xhttp_api, 0, sizeof(xhttp_api_t));
 
 	/* bind the XHTTP API */
 	if(jsonrpc_transport==0 || (jsonrpc_transport&1)) {
 		if (xhttp_load_api(&xhttp_api) < 0) {
-			if(jsonrpc_transport==1) {
+			if(jsonrpc_transport&1) {
 				LM_ERR("cannot bind to XHTTP API\n");
 				return -1;
 			} else {
@@ -1165,8 +1228,14 @@ static int jsonrpc_dispatch(sip_msg_t* msg, char* s1, char* s2)
 		return NONSIP_MSG_PASS;
 	}
 
+	if(xhttp_api.reply==NULL) {
+		LM_ERR("jsonrpc over http not initialized - check transport param\n");
+		return NONSIP_MSG_ERROR;
+	}
+
 	/* initialize jsonrpc context */
-	ctx = &_jsonrpc_ctx;
+	_jsonrpc_ctx_active = &_jsonrpc_ctx_global;
+	ctx = _jsonrpc_ctx_active;
 	memset(ctx, 0, sizeof(jsonrpc_ctx_t));
 	ctx->msg = msg;
 	/* parse the jsonrpc request */
@@ -1245,7 +1314,8 @@ int jsonrpc_exec_ex(str *cmd, str *rpath)
 	scmd = *cmd;
 
 	/* initialize jsonrpc context */
-	ctx = &_jsonrpc_ctx;
+	_jsonrpc_ctx_active = &_jsonrpc_ctx_global;
+	ctx = _jsonrpc_ctx_active;
 	memset(ctx, 0, sizeof(jsonrpc_ctx_t));
 	ctx->msg = NULL; /* mark it not send a reply out */
 	/* parse the jsonrpc request */
@@ -1435,3 +1505,37 @@ static int jsonrpc_pv_parse_jrpl_name(pv_spec_t *sp, str *in)
 	}
 	return 0;
 }
+
+/**
+ *
+ */
+static int ki_jsonrpcs_exec(sip_msg_t *msg, str *scmd)
+{
+	return jsonrpc_exec_ex(scmd, NULL);
+}
+
+/**
+ *
+ */
+/* clang-format off */
+static sr_kemi_t sr_kemi_jsonrpcs_exports[] = {
+	{ str_init("jsonrpcs"), str_init("exec"),
+		SR_KEMIP_INT, ki_jsonrpcs_exec,
+		{ SR_KEMIP_STR, SR_KEMIP_NONE, SR_KEMIP_NONE,
+			SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE }
+	},
+
+	{ {0, 0}, {0, 0}, 0, NULL, { 0, 0, 0, 0, 0, 0 } }
+};
+/* clang-format on */
+
+/**
+ *
+ */
+int mod_register(char *path, int *dlflags, void *p1, void *p2)
+{
+	sr_kemi_modules_add(sr_kemi_jsonrpcs_exports);
+	return 0;
+}
+
+/** @} */

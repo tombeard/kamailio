@@ -1,5 +1,4 @@
 #
-# 
 # WARNING: do not run this directly, it should be run by the master Makefile
 
 include ../../Makefile.defs
@@ -21,8 +20,6 @@ else
 	LIBS += -L$(LOCALBASE)/lib -lxml2
 endif
 
-DEFS+=-DKAMAILIO_MOD_INTERFACE
-
 SERLIBPATH=../../lib
 SER_LIBS+=$(SERLIBPATH)/srdb1/srdb1
 include ../../Makefile.modules
@@ -42,7 +39,8 @@ install-cfg:
 	@$(call try_err, mkdir -p $(cfg_prefix)/$(cfg_dir))
 	@$(call try_err, $(INSTALL_TOUCH) \
 		$(cfg_prefix)/$(cfg_dir)/pi_framework.xml.sample)
-	@$(call try_err, $(INSTALL_CFG) ../../../misc/examples/pi_framework.xml \
+	@$(call try_err, $(INSTALL_CFG) \
+		../../../misc/examples/pi_framework/pi_framework.xml \
 		$(cfg_prefix)/$(cfg_dir)/pi_framework.xml.sample)
 	@if [ -z "${skip_cfg_install}" -a \
 		! -f $(cfg_prefix)/$(cfg_dir)/pi_framework.xml ]; then \

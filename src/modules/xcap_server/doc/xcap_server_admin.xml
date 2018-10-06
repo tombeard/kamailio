@@ -10,13 +10,13 @@
 <!-- Module User's Guide -->
 
 <chapter>
-	
+
 	<title>&adminguide;</title>
-	
+
 	<section>
 	<title>Overview</title>
 	<para>
-		This module provides an XCAP server functionaly inside Kamailio
+		This module provides an XCAP server functionally inside Kamailio
 		and SER SIP servers.
 	</para>
 	<para>
@@ -26,13 +26,13 @@
 		<para>
 			reuse of SIP router transport layer - XCAP documents can be sent
 			via SIP (UDP, TCP, TLS and SCTP) and via HTTP (TCP or TLS (HTTPS)).
-			For HTTP/S, you neet to load XHTTP module to handle HTTP/S
+			For HTTP/S, you need to load XHTTP module to handle HTTP/S
 			requests.
 		</para>
 		</listitem>
 		<listitem>
 		<para>
-			the Presence server has access imediatelly to the latest version
+			the Presence server has access immediately to the latest version
 			of XCAP documents. No more need to trigger refresh of XCAP
 			documents via RPC command.
 		</para>
@@ -113,14 +113,14 @@
 	</section>
 	<section>
 	<title>Parameters</title>
-	<section>
+	<section id="xcap_server.p.db_url">
 		<title><varname>db_url</varname> (string)</title>
 		<para>
 		Database &url;.
 		</para>
 		<para>
 		<emphasis>
-			Default value is 
+			Default value is
 			<quote>&defaultdb;</quote>.
 		</emphasis>
 		</para>
@@ -133,7 +133,7 @@ modparam("xcap_server", "db_url", "mysql://user:passwd@host.com/dbname")
 </programlisting>
 		</example>
 	</section>
-	<section>
+	<section id="xcap_server.p.xcap_table">
 		<title><varname>xcap_table</varname> (string)</title>
 		<para>
 		The name of table where to store the xcap documents.
@@ -152,7 +152,7 @@ modparam("xcap_server", "xcap_table", "xcapdocs")
 </programlisting>
 		</example>
 	</section>
-	<section>
+	<section id="xcap_server.p.xcap_root">
 		<title><varname>xcap_root</varname> (str)</title>
 		<para>
 			XCAP root URL.
@@ -171,7 +171,7 @@ modparam("xcap_server", "xcap_root", "/xcap-root/")
 </programlisting>
 		</example>
 	</section>
-	<section>
+	<section id="xcap_server.p.buf_size">
 		<title><varname>buf_size</varname> (int)</title>
 		<para>
 		Size of local buffer for handling XCAP documents.
@@ -190,7 +190,7 @@ modparam("xcap_server", "buf_size", 2048)
 </programlisting>
 		</example>
 	</section>
-	<section>
+	<section id="xcap_server.p.xml_ns">
 		<title><varname>xml_ns</varname> (str)</title>
 		<para>
 			Register extra XML namespaces to be used with XPath. You
@@ -214,7 +214,7 @@ modparam("xcap_server", "xml_ns",
 </programlisting>
 		</example>
 	</section>
-	<section>
+	<section id="xcap_server.p.directory_scheme">
 		<title><varname>directory_scheme (int)</varname></title>
 		<para>
 			Allows the scheme used in
@@ -226,7 +226,7 @@ modparam("xcap_server", "xml_ns",
 			be paths a client can use to download the listed XCAP
 			documents. In some cases (for example, when the XCAP
 			server is accessed using HTTP from an HTTP proxy the
-			client connectes to using HTTPS) the XCAP server may
+			client connected to using HTTPS) the XCAP server may
 			not be able to automatically determine the correct
 			scheme to use based on the HTTP connection.
 		</para>
@@ -240,7 +240,7 @@ modparam("xcap_server", "xml_ns",
 		<emphasis>0</emphasis> - use the HTTP scheme.
 		</para></listitem>
 		<listitem><para>
-		<emphasis>1</emphasis> - use the HTTPS scheme. 
+		<emphasis>1</emphasis> - use the HTTPS scheme.
 		</para></listitem>
 		</itemizedlist>
 		<example>
@@ -252,7 +252,7 @@ modparam("xcap_server", "directory_scheme", 0)
 </programlisting>
 		</example>
 	</section>
-	<section>
+	<section id="xcap_server.p.directory_hostname">
 		<title><varname>directory_hostname (str)</varname></title>
 		<para>
 			Allows the hostname (and port) used in
@@ -264,7 +264,7 @@ modparam("xcap_server", "directory_scheme", 0)
 			be paths a client can use to download the listed XCAP
 			documents. In some cases (for example, when the XCAP
 			server is accessed through a proxy that re-writes
-			headers, or a client is non-conformant and does not
+			headers, or a client is non-conforming and does not
 			include a Host: header) the XCAP server may not be able
 			to automatically determine the correct hostname to use.
 		</para>
@@ -288,7 +288,7 @@ modparam("xcap_server", "directory_hostname", "xcap.example.com")
 
 	<section>
 	<title>Functions</title>
- 	<section>
+ 	<section id="xcap_server.f.xcaps_put">
 	    <title>
 		<function moreinfo="none">xcaps_put(uri, path, doc)</function>
 	    </title>
@@ -315,7 +315,7 @@ event_route[xhttp:request] {
 </programlisting>
 	    </example>
 	</section>
- 	<section>
+ 	<section id="xcap_server.f.xcaps_get">
 	    <title>
 		<function moreinfo="none">xcaps_get(uri, path)</function>
 	    </title>
@@ -342,7 +342,7 @@ event_route[xhttp:request] {
 </programlisting>
 	    </example>
 	</section>
- 	<section>
+ 	<section id="xcap_server.f.xcaps_del">
 	    <title>
 		<function moreinfo="none">xcaps_del(uri, path)</function>
 	    </title>
@@ -372,7 +372,7 @@ event_route[xhttp:request] {
 	</section>
 
 	<section>
-		<title>Exported pseudo-variables</title>
+		<title>Pseudo Variables</title>
 		<itemizedlist>
 			<listitem><para>
 				<emphasis>$xcapuri(name=>key)</emphasis> - name can be any

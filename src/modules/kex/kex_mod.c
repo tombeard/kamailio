@@ -32,6 +32,7 @@
 #include "../../core/flags.h"
 #include "../../core/dset.h"
 #include "../../core/mod_fix.h"
+#include "../../core/kemi.h"
 #include "../../core/parser/parse_uri.h"
 #include "../../lib/srutils/sruid.h"
 
@@ -87,8 +88,8 @@ static cmd_export_t cmds[]={
 		0, ANY_ROUTE },
 	{"isbflagset", (cmd_function)w_isbflagset,      2,fixup_igp_igp,
 		0, ANY_ROUTE },
-	{"setdsturi", (cmd_function)w_setdsturi,     1, 0,
-		0, ANY_ROUTE },
+	{"setdsturi", (cmd_function)w_setdsturi,     1, fixup_spve_null,
+		fixup_free_spve_null, ANY_ROUTE },
 	{"resetdsturi", (cmd_function)w_resetdsturi, 0, 0,
 		0, ANY_ROUTE },
 	{"isdsturiset", (cmd_function)w_isdsturiset, 0, 0,
@@ -118,14 +119,12 @@ struct module_exports exports= {
 	DEFAULT_DLFLAGS, /* dlopen flags */
 	cmds,
 	params,
-	0,          /* exported statistics */
-	0,          /* exported MI functions */
+	0,          /* exported RPC methods */
 	mod_pvs,    /* exported pseudo-variables */
-	0,          /* extra processes */
+	0,          /* response handling function */
 	mod_init,   /* module initialization function */
-	0,
-	(destroy_function) destroy,
-	child_init  /* per-child init function */
+	child_init, /* per-child init function */
+	destroy
 };
 
 /**
@@ -233,3 +232,49 @@ static int pv_get_sruid_val(struct sip_msg *msg, pv_param_t *param,
 	return pv_get_strval(msg, param, res, &_kex_sruid.uid);
 }
 
+/**
+ *
+ */
+static int ki_kex_setdebug(sip_msg_t *msg, int lval)
+{
+	set_local_debug_level(lval);
+	return 1;
+}
+
+/**
+ *
+ */
+static int ki_kex_resetdebug(sip_msg_t *msg)
+{
+	reset_local_debug_level();
+	return 1;
+}
+
+/**
+ *
+ */
+/* clang-format off */
+static sr_kemi_t sr_kemi_kex_exports[] = {
+	{ str_init("kex"), str_init("setdebug"),
+		SR_KEMIP_INT, ki_kex_setdebug,
+		{ SR_KEMIP_INT, SR_KEMIP_NONE, SR_KEMIP_NONE,
+			SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE }
+	},
+	{ str_init("kex"), str_init("resetdebug"),
+		SR_KEMIP_INT, ki_kex_resetdebug,
+		{ SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE,
+			SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE }
+	},
+
+	{ {0, 0}, {0, 0}, 0, NULL, { 0, 0, 0, 0, 0, 0 } }
+};
+/* clang-format on */
+
+/**
+ *
+ */
+int mod_register(char *path, int *dlflags, void *p1, void *p2)
+{
+	sr_kemi_modules_add(sr_kemi_kex_exports);
+	return 0;
+}

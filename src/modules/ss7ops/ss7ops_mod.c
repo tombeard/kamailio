@@ -24,6 +24,7 @@
 #include "isup_parsed.h"
 #include "../../core/sr_module.h"
 #include "../../core/endianness.h"
+#include "../../core/kemi.h"
 
 MODULE_VERSION
 
@@ -79,13 +80,9 @@ static cmd_export_t cmds[] = {
 };
 
 static pv_export_t mod_pvs[] = {
-        { {"isup", sizeof("isup")-1}, PVT_OTHER, pv_get_isup,
-        	0, pv_parse_isup_name, 0, 0, 0 },
-        { {0, 0}, 0, 0, 0, 0, 0, 0, 0 }
-};
-
-static param_export_t params[] = {
-	{0, 0, 0}
+	{ {"isup", sizeof("isup")-1}, PVT_OTHER, pv_get_isup,
+			0, pv_parse_isup_name, 0, 0, 0 },
+	{ {0, 0}, 0, 0, 0, 0, 0, 0, 0 }
 };
 
 static int mod_init(void)
@@ -100,18 +97,16 @@ static void destroy(void)
 }
 
 struct module_exports exports = {
-	"ss7",
+	"ss7",      /*!< module name */
 	DEFAULT_DLFLAGS, /*!< dlopen flags */
-	cmds,       /*!< Exported functions */
-	params,     /*!< Exported parameters */
-	0,
-	0,          /*!< exported MI functions */
+	cmds,       /*!< exported functions */
+	0,          /*!< exported parameters */
+	0,          /*!< exported rpc functions */
 	mod_pvs,    /*!< exported pseudo-variables */
-	0,          /*!< extra processes */
-	mod_init,   /*!< module initialization function */
-	0,          /*!< response function */
-	destroy,    /*!< destroy function */
-	0           /*!< child initialization function */
+	0,          /*!< response handling function */
+	mod_init,   /*!< module init function */
+	0,          /*!< child init function */
+	destroy     /*!< module destroy function */
 };
 
 static const uint8_t *extract_from_m2ua(const uint8_t *data, size_t *len)
@@ -315,10 +310,9 @@ static uint8_t *fetch_payload(struct sip_msg *_m, char *pname, int *len)
 	return (uint8_t *) pt.rs.s;
 }
 
-static int w_isup_to_json(struct sip_msg *_m, char *param1, char *param2)
+static int ki_isup_to_json(sip_msg_t *_m, int proto)
 {
 	struct isup_state isup_state = { 0, };
-	int proto = atoi(param1);
 	const uint8_t *data;
 	int opc, dpc, mtp_type, int_len, rc;
 	size_t len;
@@ -327,6 +321,7 @@ static int w_isup_to_json(struct sip_msg *_m, char *param1, char *param2)
 	srjson_DeleteDoc(isup_json);
 	isup_last = NULL;
 	isup_json = NULL;
+	mtp_type = 0;
 
 	data = fetch_payload(_m, "$var(payload)", &int_len);
 	if (!data)
@@ -370,6 +365,11 @@ static int w_isup_to_json(struct sip_msg *_m, char *param1, char *param2)
 	isup_last = srjson_PrintUnformatted(isup_state.json, isup_state.json->root);
 	isup_json = isup_state.json;
 	return 1;
+}
+
+static int w_isup_to_json(struct sip_msg *_m, char *param1, char *param2)
+{
+		return ki_isup_to_json(_m, atoi(param1));
 }
 
 #define UINT_OR_NULL(msg, param, res, node) \
@@ -715,4 +715,28 @@ static int pv_parse_isup_name(pv_spec_p sp, str *in)
 error:
 	LM_ERR("unknown isup input %.*s\n", in->len, in->s);
 	return -1;
+}
+
+/**
+ *
+ */
+/* clang-format off */
+static sr_kemi_t sr_kemi_ss7ops_exports[] = {
+	{ str_init("ss7ops"), str_init("isup_to_json"),
+		SR_KEMIP_INT, ki_isup_to_json,
+		{ SR_KEMIP_INT, SR_KEMIP_NONE, SR_KEMIP_NONE,
+			SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE }
+	},
+
+	{ {0, 0}, {0, 0}, 0, NULL, { 0, 0, 0, 0, 0, 0 } }
+};
+/* clang-format on */
+
+/**
+ *
+ */
+int mod_register(char *path, int *dlflags, void *p1, void *p2)
+{
+	sr_kemi_modules_add(sr_kemi_ss7ops_exports);
+	return 0;
 }

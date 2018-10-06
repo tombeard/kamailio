@@ -1,6 +1,4 @@
 /*
- * $Id$
- *
  * Path handling for intermediate proxies.
  *
  * Copyright (C) 2006 Inode GmbH (Andreas Granig <andreas.granig@inode.info>)
@@ -17,8 +15,8 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License 
- * along with this program; if not, write to the Free Software 
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  *
 
@@ -42,11 +40,16 @@
  */
 int add_path(struct sip_msg* _msg, char* _a, char* _b);
 
+int ki_add_path(struct sip_msg* _msg);
+
 /*
  * Prepend own uri to Path header and take care of given
  * user.
  */
 int add_path_usr(struct sip_msg* _msg, char* _a, char* _b);
+
+int ki_add_path_user(sip_msg_t* _msg, str* _user);
+int ki_add_path_user_params(sip_msg_t* _msg, str* _user, str* _params);
 
 /*
  * Prepend own uri to Path header and append received address as
@@ -54,11 +57,16 @@ int add_path_usr(struct sip_msg* _msg, char* _a, char* _b);
  */
 int add_path_received(struct sip_msg* _msg, char* _a, char* _b);
 
+int ki_add_path_received(struct sip_msg* _msg);
+
 /*
  * Prepend own uri to Path header and append received address as
  * "received"-param to that uri and take care of given user.
  */
 int add_path_received_usr(struct sip_msg* _msg, char* _a, char* _b);
+
+int ki_add_path_received_user(sip_msg_t* _msg, str* _user);
+int ki_add_path_received_user_params(sip_msg_t* _msg, str* _user, str* _params);
 
 /*
  * rr callback for setting dst-uri

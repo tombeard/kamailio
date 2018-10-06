@@ -36,6 +36,7 @@
 #include "../../core/str.h"
 #include "../../core/mem/mem.h"
 #include "../../core/pt.h"
+#include "../../core/kemi.h"
 #include "../../core/rpc.h"
 #include "../../core/rpc_lookup.h"
 #include "../../lib/srdb1/db.h"
@@ -114,10 +115,10 @@ static int pua_rpc_init(void);
 
 static cmd_export_t cmds[]=
 {
-	{"bind_libxml_api",          (cmd_function)bind_libxml_api, 1, 0, 0, 0},
-	{"bind_pua",                 (cmd_function)bind_pua, 1, 0, 0, 0},
-	{"pua_update_contact",       (cmd_function)update_contact, 0, 0, 0, REQUEST_ROUTE},
-	{0,                          0,	0, 0, 0, 0}
+	{"pua_update_contact",  (cmd_function)w_pua_update_contact, 0, 0, 0, REQUEST_ROUTE},
+	{"bind_libxml_api",     (cmd_function)bind_libxml_api, 1, 0, 0, 0},
+	{"bind_pua",            (cmd_function)bind_pua, 1, 0, 0, 0},
+	{0,                     0, 0, 0, 0, 0}
 };
 
 static param_export_t params[]={
@@ -140,17 +141,15 @@ static param_export_t params[]={
 /** module exports */
 struct module_exports exports= {
 	"pua",				/* module name */
-	DEFAULT_DLFLAGS,		/* dlopen flags */
+	DEFAULT_DLFLAGS,	/* dlopen flags */
 	cmds,				/* exported functions */
 	params,				/* exported parameters */
-	0,				/* exported statistics */
-	0,				/* exported MI functions */
-	0,				/* exported pseudo-variables */
-	0,				/* extra processes */
+	0,					/* RPC method exports */
+	0,					/* exported pseudo-variables */
+	0,					/* response handling function */
 	mod_init,			/* module initialization function */
-	0,				/* response handling function */
-	destroy,			/* destroy function */
-	child_init			/* per-child init function */
+	child_init,			/* per-child init function */
+	destroy				/* module destroy function */
 };
 
 /**
@@ -1229,5 +1228,29 @@ static int pua_rpc_init(void)
 		LM_ERR("failed to register RPC commands\n");
 		return -1;
 	}
+	return 0;
+}
+
+/**
+ *
+ */
+/* clang-format off */
+static sr_kemi_t sr_kemi_pua_exports[] = {
+	{ str_init("pua"), str_init("pua_update_contact"),
+		SR_KEMIP_INT, ki_pua_update_contact,
+		{ SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE,
+			SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE }
+	},
+
+	{ {0, 0}, {0, 0}, 0, NULL, { 0, 0, 0, 0, 0, 0 } }
+};
+/* clang-format on */
+
+/**
+ *
+ */
+int mod_register(char *path, int *dlflags, void *p1, void *p2)
+{
+	sr_kemi_modules_add(sr_kemi_pua_exports);
 	return 0;
 }

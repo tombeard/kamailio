@@ -1,4 +1,4 @@
-/* 
+/*
  * Copyright (C) 2010 Daniel-Constantin Mierla (asipto.com)
  *
  * Permission to use, copy, modify, and distribute this software for any
@@ -23,6 +23,17 @@
 #ifndef _PPCFG_H_
 #define _PPCFG_H_
 
+#include "str.h"
+
+typedef struct ksr_ppdefine {
+	str name;
+	str value;
+	int dtype;
+} ksr_ppdefine_t;
+
+str* pp_get_define_name(int idx);
+ksr_ppdefine_t* pp_get_define(int idx);
+
 int pp_subst_add(char *data);
 int pp_substdef_add(char *data, int mode);
 int pp_subst_run(char **data);
@@ -33,6 +44,8 @@ int  pp_define_set_type(int type);
 
 void pp_ifdef_level_update(int val);
 void pp_ifdef_level_check(void);
+
+void pp_define_core(void);
 
 #endif /*_PPCFG_H_*/
 

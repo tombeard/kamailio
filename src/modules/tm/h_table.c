@@ -48,6 +48,10 @@
 #include "uac.h" /* free_local_ack */
 
 
+#define T_UAC_PTR(T) ((tm_ua_client_t*)((char*)T + sizeof(tm_cell_t) \
+								+ MD5_LEN - sizeof(((tm_cell_t*)0)->md5)))
+
+
 static enum kill_reason kr;
 
 /* pointer to the big table where all the transaction data lives */
@@ -128,6 +132,10 @@ void free_cell_helper(
 
 	LM_DBG("freeing transaction %p from %s:%u\n", dead_cell, fname, fline);
 
+	if(dead_cell==NULL) {
+		return;
+	}
+
 	if(dead_cell->prev_c != NULL && dead_cell->next_c != NULL) {
 		if(likely(silent == 0)) {
 			LM_WARN("removed cell %p is still linked in hash table (%s:%u)\n",
@@ -143,11 +151,21 @@ void free_cell_helper(
 		unlink_timers(dead_cell);
 		remove_from_hash_table_unsafe(dead_cell);
 	}
-	release_cell_lock(dead_cell);
+	release_cell_lock(dead_cell); /* does nothing */
+
+	dead_cell->fcount++;
+	if(dead_cell->fcount!=1) {
+		LM_WARN("unexpected fcount value: %d\n", dead_cell->fcount);
+	}
+	if(dead_cell->uac==NULL || dead_cell->uac!=T_UAC_PTR(dead_cell)) {
+		LM_WARN("unexpected tm cell content: %p\n", dead_cell);
+		return;
+	}
+
 	if(unlikely(has_tran_tmcbs(dead_cell, TMCB_DESTROY)))
 		run_trans_callbacks(TMCB_DESTROY, dead_cell, 0, 0, 0);
 
-	shm_lock();
+	shm_global_lock();
 	/* UA Server */
 	if(dead_cell->uas.request)
 		sip_msg_free_unsafe(dead_cell->uas.request);
@@ -167,9 +185,9 @@ void free_cell_helper(
 			 * otherwise the release function must to be aware of
 			 * the lock state (Miklos)
 			 */
-			shm_unlock();
+			shm_global_unlock();
 			cbs_tmp->release(cbs_tmp->param);
-			shm_lock();
+			shm_global_lock();
 		}
 		shm_free_unsafe(cbs_tmp);
 	}
@@ -247,10 +265,11 @@ void free_cell_helper(
 		xavp_destroy_list_unsafe(&dead_cell->xavps_list);
 #endif
 
+	memset(dead_cell, 0, sizeof(tm_cell_t));
 	/* the cell's body */
 	shm_free_unsafe(dead_cell);
 
-	shm_unlock();
+	shm_global_unlock();
 	t_stats_freed();
 }
 
@@ -330,9 +349,7 @@ struct cell *build_cell(struct sip_msg *p_msg)
 	new_cell->uas.response.my_T = new_cell;
 	init_rb_timers(&new_cell->uas.response);
 	/* UAC */
-	new_cell->uac =
-			(struct ua_client *)((char *)new_cell + sizeof(struct cell)
-								+ MD5_LEN - sizeof(((struct cell *)0)->md5));
+	new_cell->uac = T_UAC_PTR(new_cell);
 	/* timers */
 	init_cell_timers(new_cell);
 
@@ -463,7 +480,7 @@ struct s_table *init_hash_table()
 	/*allocs the table*/
 	_tm_table = (struct s_table *)shm_malloc(sizeof(struct s_table));
 	if(!_tm_table) {
-		LOG(L_ERR, "ERROR: init_hash_table: no shmem for TM table\n");
+		LM_ERR("no shmem for TM table\n");
 		goto error0;
 	}
 
@@ -573,5 +590,64 @@ void tm_xdata_replace(tm_xdata_t *newxd, tm_xlinks_t *bakxd)
 		bakxd->xavps_list = xavp_set_list(&newxd->xavps_list);
 #endif
 		return;
+	}
+}
+
+void tm_log_transaction(tm_cell_t *tcell, int llev, char *ltext)
+{
+	LOG(llev, "%s [start] transaction %p\n", ltext, tcell);
+	LOG(llev, "%s - tindex=%u tlabel=%u method='%.*s' from='%.*s'"
+			" to='%.*s' callid='%.*s' cseq='%.*s' uas_request=%s"
+			" tflags=%u outgoings=%u ref_count=%u lifetime=%u\n",
+			ltext, (unsigned)tcell->hash_index, (unsigned)tcell->label,
+			tcell->method.len, tcell->method.s,
+			tcell->from.len, tcell->from.s,
+			tcell->to.len, tcell->to.s,
+			tcell->callid.len, tcell->callid.s,
+			tcell->cseq_n.len, tcell->cseq_n.s,
+			(tcell->uas.request)?"yes":"no",
+			(unsigned)tcell->flags,
+			(unsigned)tcell->nr_of_outgoings,
+#ifdef TM_DEL_UNREF
+			(unsigned)atomic_get(&tcell->ref_count),
+#else
+			tcell->ref_count,
+#endif
+			(unsigned)TICKS_TO_S(tcell->end_of_life)
+		);
+
+	LOG(llev, "%s [end] transaction %p\n", ltext, tcell);
+}
+
+#define TM_LIFETIME_LIMIT 90
+/* clean active but very old transactions */
+void tm_clean_lifetime(void)
+{
+	int r;
+	tm_cell_t *tcell;
+	ticks_t texp;
+
+	texp = get_ticks_raw() - S_TO_TICKS(TM_LIFETIME_LIMIT);
+
+	for (r=0; r<TABLE_ENTRIES; r++) {
+		/* faster first try without lock */
+		if(clist_empty(&_tm_table->entries[r], next_c)) {
+			continue;
+		}
+		lock_hash(r);
+		/* one more time with lock to be avoid any cpu races */
+		if(clist_empty(&_tm_table->entries[r], next_c)) {
+			unlock_hash(r);
+			continue;
+		}
+
+		clist_foreach(&_tm_table->entries[r], tcell, next_c)
+		{
+			if(TICKS_GT(texp, tcell->end_of_life)) {
+				tm_log_transaction(tcell, L_WARN, "[hard cleanup]");
+				free_cell(tcell);
+			}
+		}
+		unlock_hash(r);
 	}
 }

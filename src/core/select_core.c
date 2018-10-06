@@ -74,7 +74,10 @@ int select_ruri(str* res, select_t* s, struct sip_msg* msg)
 	 * Subsequent select calls will fail when they try to parse
 	 * the URI anyway. (Miklos)
 	 */
-	parse_sip_msg_uri(msg);
+	if(parse_sip_msg_uri(msg)<0) {
+		LM_ERR("failed to parse sip msg uri\n");
+		return -1;
+	}
 
 	if (msg->parsed_uri_ok)
 		select_uri_p = &msg->parsed_uri;
@@ -82,8 +85,7 @@ int select_ruri(str* res, select_t* s, struct sip_msg* msg)
 	if (msg->first_line.type==SIP_REQUEST) {
 		if(msg->new_uri.s) {
 			RETURN0_res(msg->new_uri);
-		}
-		else {
+		} else {
 			RETURN0_res(msg->first_line.u.request.uri);
 		}
 	}
@@ -677,18 +679,7 @@ int select_anyheader(str* res, select_t* s, struct sip_msg* msg)
 	return 0;
 }
 
-//ABSTRACT_F(select_anyheader_params)
-// Instead of ABSTRACT_F(select_anyheader_params)
-// use function which uses select_core_table
-// to avoid gcc warning about not used
- 
-int select_anyheader_params(str* res, select_t* s, struct sip_msg* msg)
-{
-	if (select_core_table.next)
-		return -1;
-	else
-		return -1;
-}
+ABSTRACT_F(select_anyheader_params)
 
 ABSTRACT_F(select_any_uri)
 
@@ -836,7 +827,7 @@ int select_uri_hostport(str* res, select_t* s, struct sip_msg* msg)
 {
 	char* p;
 	int size;
-	
+
 	if (select_uri_p == NULL) {
 		if (parse_uri(res->s, res->len, &uri)<0)
 			return -1;
@@ -845,27 +836,27 @@ int select_uri_hostport(str* res, select_t* s, struct sip_msg* msg)
 
 	if (!select_uri_p->host.len)
 		return -1;
-	
+
 	if (select_uri_p->port.len) {
 		res->s=select_uri_p->host.s;
 		res->len=select_uri_p->host.len+select_uri_p->port.len+1;
 		return 0;
 	}
-	
+
 	size=select_uri_p->host.len+5;
 	if (!(p = get_static_buffer(size)))
 		return -1;
-			
-	strncpy(p, select_uri_p->host.s, select_uri_p->host.len);
+
+	memcpy(p, select_uri_p->host.s, select_uri_p->host.len);
 	switch (select_uri_p->type) {
 		case SIPS_URI_T:
 		case TELS_URI_T:
-			strncpy(p+select_uri_p->host.len, ":5061", 5); 
+			memcpy(p+select_uri_p->host.len, ":5061", 5);
 			break;
 		case SIP_URI_T:
 		case TEL_URI_T:
 		case URN_URI_T:
-			strncpy(p+select_uri_p->host.len, ":5060", 5);
+			memcpy(p+select_uri_p->host.len, ":5060", 5);
 			break;
 		case ERROR_URI_T:
 			return -1;
@@ -1295,7 +1286,7 @@ ABSTRACT_F(select_dst)
 ABSTRACT_F(select_rcv)
 int select_ip_port(str* res, select_t* s, struct sip_msg* msg)
 {
-	str ip_str=STR_NULL, port_str=STR_NULL, proto_str=STR_NULL;
+	str ip_str=STR_NULL, port_str=STR_NULL, proto_str=str_init("udp");
 	int param, pos;
 	
 
@@ -1563,7 +1554,8 @@ int select_sys_now_fmt(str* res, select_t* s, struct sip_msg* msg)
 			tm = localtime(&t);
 			break;
 		default:
-			BUG("Unexpected parameter value 'now' \"%d\"\n", s->params[SEL_POS].v.i);
+			BUG("Unexpected parameter value 'now' \"%d\" (%p)\n",
+					s->params[SEL_POS].v.i, select_core_table.next);
 			return -1;
 	}
 	if (s->n <= SEL_POS+1) {

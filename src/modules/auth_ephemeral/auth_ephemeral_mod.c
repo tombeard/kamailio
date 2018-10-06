@@ -31,6 +31,7 @@
 #include "../../core/str.h"
 #include "../../core/rpc.h"
 #include "../../core/rpc_lookup.h"
+#include "../../core/kemi.h"
 #include "../../modules/auth/api.h"
 
 #include "auth_ephemeral_mod.h"
@@ -106,14 +107,12 @@ struct module_exports exports=
 	DEFAULT_DLFLAGS,	/* dlopen flags */
 	cmds,			/* Exported functions */
 	params,			/* Exported parameters */
-	0,			/* exported statistics */
-	0,			/* exported MI functions */
+	0,			/* exported RPC methods */
 	0,			/* exported pseudo-variables */
-	0,			/* extra processes */
-	mod_init,		/* module initialization function */
 	0,			/* response function */
-	destroy,		/* destroy function */
-	0			/* child initialization function */
+	mod_init,		/* module initialization function */
+	0,			/* child initialization function */
+	destroy			/* destroy function */
 };
 
 static int mod_init(void)
@@ -409,3 +408,43 @@ static int autheph_init_rpc(void)
 	return 0;
 }
 
+/**
+ *
+ */
+/* clang-format off */
+static sr_kemi_t sr_kemi_auth_ephemeral_exports[] = {
+	{ str_init("auth_ephemeral"), str_init("autheph_check"),
+		SR_KEMIP_INT, ki_autheph_check,
+		{ SR_KEMIP_STR, SR_KEMIP_NONE, SR_KEMIP_NONE,
+			SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE }
+	},
+	{ str_init("auth_ephemeral"), str_init("autheph_www"),
+		SR_KEMIP_INT, ki_autheph_www,
+		{ SR_KEMIP_STR, SR_KEMIP_NONE, SR_KEMIP_NONE,
+			SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE }
+	},
+	{ str_init("auth_ephemeral"), str_init("autheph_www_method"),
+		SR_KEMIP_INT, ki_autheph_www_method,
+		{ SR_KEMIP_STR, SR_KEMIP_STR, SR_KEMIP_NONE,
+			SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE }
+	},
+	{ str_init("auth_ephemeral"), str_init("autheph_proxy"),
+		SR_KEMIP_INT, ki_autheph_proxy,
+		{ SR_KEMIP_STR, SR_KEMIP_NONE, SR_KEMIP_NONE,
+			SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE }
+	},
+	{ str_init("auth_ephemeral"), str_init("autheph_authenticate"),
+		SR_KEMIP_INT, ki_autheph_authenticate,
+		{ SR_KEMIP_STR, SR_KEMIP_STR, SR_KEMIP_NONE,
+			SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE }
+	},
+
+	{ {0, 0}, {0, 0}, 0, NULL, { 0, 0, 0, 0, 0, 0 } }
+};
+/* clang-format on */
+
+int mod_register(char *path, int *dlflags, void *p1, void *p2)
+{
+	sr_kemi_modules_add(sr_kemi_auth_ephemeral_exports);
+	return 0;
+}

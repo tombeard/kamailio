@@ -35,8 +35,6 @@
 #ifndef config_h
 #define config_h
 
-#include "types.h"
-
 #define SIP_PORT  5060 /*!< default SIP port if none specified */
 #define SIPS_PORT 5061 /*!< default SIP port for TLS if none specified */
 
@@ -46,8 +44,6 @@
 #define TLS_CERT_FILE "cert.pem"	/*!< The certificate file */
 #define TLS_CA_FILE 0			/*!< no CA list file by default */
 #define TLS_CRL_FILE 0 /*!< no CRL by default */
-
-#define MAX_LISTEN 16			/*!< maximum number of addresses on which we will listen */
 
 #define CHILD_NO    8			/*!< default number of child processes started */
 

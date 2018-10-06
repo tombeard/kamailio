@@ -76,6 +76,7 @@ Bogdan-Andre Iancu
               3.27. regid_mode (integer)
               3.28. flow_timer (integer)
               3.29. contact_max_size (integer)
+              3.30. event_callback (str)
 
         4. Functions
 
@@ -98,7 +99,7 @@ Bogdan-Andre Iancu
 
               6.1. max_expires
               6.2. max_contacts
-              6.3. defaults_expires
+              6.3. default_expires
               6.4. accepted_regs
               6.5. rejected_regs
 
@@ -138,16 +139,17 @@ Bogdan-Andre Iancu
    1.26. Set regid_mode parameter
    1.27. Set flow_timer parameter
    1.28. Set contact_max_size parameter
-   1.29. save usage
-   1.30. lookup usage
-   1.31. lookup_branches usage
-   1.32. registered usage
-   1.33. add_sock_hdr usage
-   1.34. unregister usage
-   1.35. reg_fetch_contacts usage
-   1.36. reg_free_contacts usage
-   1.37. event_route[usrloc:contact-expired] usage
-   1.38. $ulc(name) usage
+   1.29. Set event_callback parameter
+   1.30. save usage
+   1.31. lookup usage
+   1.32. lookup_branches usage
+   1.33. registered usage
+   1.34. add_sock_hdr usage
+   1.35. unregister usage
+   1.36. reg_fetch_contacts usage
+   1.37. reg_free_contacts usage
+   1.38. event_route[usrloc:contact-expired] usage
+   1.39. $ulc(name) usage
 
 Chapter 1. Admin Guide
 
@@ -194,6 +196,7 @@ Chapter 1. Admin Guide
         3.27. regid_mode (integer)
         3.28. flow_timer (integer)
         3.29. contact_max_size (integer)
+        3.30. event_callback (str)
 
    4. Functions
 
@@ -214,7 +217,7 @@ Chapter 1. Admin Guide
 
         6.1. max_expires
         6.2. max_contacts
-        6.3. defaults_expires
+        6.3. default_expires
         6.4. accepted_regs
         6.5. rejected_regs
 
@@ -317,6 +320,7 @@ Chapter 1. Admin Guide
    3.27. regid_mode (integer)
    3.28. flow_timer (integer)
    3.29. contact_max_size (integer)
+   3.30. event_callback (str)
 
 3.1. default_expires (integer)
 
@@ -340,10 +344,10 @@ modparam("registrar", "default_expires", 1800)
    This parameter specifies that the expiry used for newly created usrloc
    records are not fixed, but a random value in the interval
    “[default_expires-default_expires_range%, default_expires]”. The value
-   is between 0 and 100 and represent the maximim percentage from expires
-   that will be substracted when computing the value. Default is 0,
-   meaning default_expires is left unmodified. This parameter can be
-   modified via the Kamailio config framework.
+   is between 0 and 100 and represent the maximum percentage from expires
+   that will be subtracted when computing the value. Default is 0, meaning
+   default_expires is left unmodified. This parameter can be modified via
+   the Kamailio config framework.
 
    Default value is 0.
 
@@ -568,9 +572,10 @@ modparam("registrar", "sock_hdr_name", "Sock-Info")
 3.17. method_filtering (integer)
 
    Tells if the contact filtering based on supported methods should be
-   performed during lookup. It's enabled only if it has a non zero value.
-   Supported methods are listed in the “Allow:” header in the REGISTER
-   message and stored in the location database.
+   performed during lookup on initial requests without to-tag. It's
+   enabled only if it has a non zero value. Supported methods are listed
+   in the “Allow:” header in the REGISTER message and stored in the
+   location database.
 
    Default value is 0 (disabled).
 
@@ -670,7 +675,7 @@ modparam("registrar", "reg_callid_avp", "$avp(s:avp)")
        current registration AoR. It overwrites the 'max_contacts' module
        parameter value.
      * socket - the string representing the socket on which the register
-       rquest was received, as alternative to using the sock_hdr.
+       request was received, as alternative to using the sock_hdr.
      * q - q value of contact (integer 0-1000). It overrides q value given
        in contact header and default_q parameter.
 
@@ -807,11 +812,33 @@ modparam("registrar", "flow_timer", 25)
    supports strings of the configured size in the column “contact” of the
    table specified in “save()” function.
 
-   Default value is 255.
+   Default value is 512.
 
    Example 1.28. Set contact_max_size parameter
 ...
-modparam("registrar", "contact_max_size", 500)
+modparam("registrar", "contact_max_size", 1024)
+...
+
+3.30. event_callback (str)
+
+   The name of the function in the KEMI configuration file (embedded
+   scripting language such as Lua, Python, ...) to be executed instead of
+   event_route[...] blocks.
+
+   The function receives a string parameter with the name of the event.
+   The only possible value currently is 'usrloc:contact-expired'.
+
+   Default value is 'empty' (no function is executed for events).
+
+   Example 1.29. Set event_callback parameter
+...
+modparam("registrar", "event_callback", "ksr_registrar_event")
+...
+-- event callback function implemented in Lua
+function ksr_registrar_event(evname)
+    KSR.info( "Expired contact for " .. KSR.pv.getw("$ulc(exp=>aor)") .. "\n");
+        return 1;
+end
 ...
 
 4. Functions
@@ -850,7 +877,7 @@ modparam("registrar", "contact_max_size", 500)
             AoR (user).
           + 0x08 - Do not apply expires_range or default_expires_range to
             this registration.
-       The flags may be given in decimal or hexa format.
+       The flags may be given in decimal or hexadecimal format.
      * uri (optional - flags param has to be set and can be 0 for default
        behavior) - SIP URI to do be used instead of To header URI. It can
        be a dynamic string with pseudo-variables.
@@ -866,7 +893,7 @@ modparam("registrar", "contact_max_size", 500)
    This function can be used from REQUEST_ROUTE, FAILURE_ROUTE and
    REPLY_ROUTE.
 
-   Example 1.29. save usage
+   Example 1.30. save usage
 ...
 save("location");
 save("location", "0x01");
@@ -882,9 +909,9 @@ save("location", "0x00", "sip:test@kamailio.org");
    value and optionally the rest will be appended to the message
    (depending on append_branches parameter value).
 
-   If the method_filtering option is enabled, the lookup function will
-   return only the contacts that support the method of the processed
-   request.
+   If the method_filtering option is enabled and request is initial
+   request without to-tag, the lookup function will return only the
+   contacts that support the method of the processed request.
 
    Meaning of the parameters is as follows:
      * domain - Name of table that should be used for the lookup.
@@ -899,7 +926,7 @@ save("location", "0x00", "sip:test@kamailio.org");
 
    This function can be used from REQUEST_ROUTE, FAILURE_ROUTE.
 
-   Example 1.30. lookup usage
+   Example 1.31. lookup usage
 ...
 lookup("location");
 switch ($retcode) {
@@ -925,7 +952,7 @@ switch ($retcode) {
 
    This function can be used from REQUEST_ROUTE, FAILURE_ROUTE.
 
-   Example 1.31. lookup_branches usage
+   Example 1.32. lookup_branches usage
 ...
 lookup_branches("location");
 ...
@@ -957,7 +984,7 @@ lookup_branches("location");
 
    This function can be used from ANY_ROUTE.
 
-   Example 1.32. registered usage
+   Example 1.33. registered usage
 ...
 if (registered("location")) {
         sl_send_reply("100", "Trying");
@@ -979,11 +1006,12 @@ if (registered("location","$rz:$Au", 2)) {
    This makes sense only in multiple replicated servers scenarios.
 
    Meaning of the parameters is as follows:
-     * hdr_name - header name to be used.
+     * hdr_name - header name to be used, it can be a static string or
+       contain variables.
 
    This function can be used from REQUEST_ROUTE.
 
-   Example 1.33. add_sock_hdr usage
+   Example 1.34. add_sock_hdr usage
 ...
 add_sock_hdr("Sock-Info");
 ...
@@ -1013,7 +1041,7 @@ add_sock_hdr("Sock-Info");
      * -2 - Error in unregistering user
      * -3 - Contacts for AOR not found
 
-   Example 1.34. unregister usage
+   Example 1.35. unregister usage
 ...
 unregister("location", "$ru");
 unregister("location", "sip:user@kamailio.org");
@@ -1037,7 +1065,7 @@ unregister("location", "", "$ruid");
 
    This function can be used from REQUEST_ROUTE, FAILURE_ROUTE.
 
-   Example 1.35. reg_fetch_contacts usage
+   Example 1.36. reg_fetch_contacts usage
 ...
 reg_fetch_contacts("location", "$ru", "callee");
 reg_fetch_contacts("location", "sip:user@kamailio.org", "caller");
@@ -1056,7 +1084,7 @@ reg_fetch_contacts("location", "sip:user@kamailio.org", "caller");
 
    This function can be used from REQUEST_ROUTE, FAILURE_ROUTE.
 
-   Example 1.36. reg_free_contacts usage
+   Example 1.37. reg_free_contacts usage
 ...
 reg_free_contacts("callee");
 ...
@@ -1070,7 +1098,7 @@ reg_free_contacts("callee");
    Executed when a contact in location table has expired. The variable
    $ulc(exp=>...) is filled with the attributes of the expired contact.
 
-   Example 1.37. event_route[usrloc:contact-expired] usage
+   Example 1.38. event_route[usrloc:contact-expired] usage
 ...
 event_route[usrloc:contact-expired] {
     xlog("expired contact for $ulc(exp=>aor)\n");
@@ -1081,7 +1109,7 @@ event_route[usrloc:contact-expired] {
 
    6.1. max_expires
    6.2. max_contacts
-   6.3. defaults_expires
+   6.3. default_expires
    6.4. accepted_regs
    6.5. rejected_regs
 
@@ -1093,7 +1121,7 @@ event_route[usrloc:contact-expired] {
 
    The value of max_contacts parameter.
 
-6.3. defaults_expires
+6.3. default_expires
 
    The value of default_expires parameter.
 
@@ -1139,11 +1167,12 @@ event_route[usrloc:contact-expired] {
      * regid - reg-id value
      * instance - instance value
      * conid - TCP socket internal connection ID ($null if UDP)
+     * server_id - server_id value
 
    The pseudo-variable accepts positive index value to access a specific
    contact record.
 
-   Example 1.38. $ulc(name) usage
+   Example 1.39. $ulc(name) usage
 ...
 if(reg_fetch_contacts("location", "$fu", "caller"))
 {
@@ -1212,7 +1241,7 @@ Chapter 2. Frequently Asked Questions
 
    Where can I find more about Kamailio?
 
-   Take a look at http://www.kamailio.org/.
+   Take a look at https://www.kamailio.org/.
 
    2.5.
 
@@ -1221,16 +1250,13 @@ Chapter 2. Frequently Asked Questions
    First at all check if your question was already answered on one of our
    mailing lists:
      * User Mailing List -
-       http://lists.sip-router.org/cgi-bin/mailman/listinfo/sr-users
+       https://lists.kamailio.org/cgi-bin/mailman/listinfo/sr-users
      * Developer Mailing List -
-       http://lists.sip-router.org/cgi-bin/mailman/listinfo/sr-dev
+       https://lists.kamailio.org/cgi-bin/mailman/listinfo/sr-dev
 
    E-mails regarding any stable Kamailio release should be sent to
-   <sr-users@lists.sip-router.org> and e-mails regarding development
-   versions should be sent to <sr-dev@lists.sip-router.org>.
-
-   If you want to keep the mail private, send it to
-   <sr-users@lists.sip-router.org>.
+   <sr-users@lists.kamailio.org> and e-mails regarding development
+   versions should be sent to <sr-dev@lists.kamailio.org>.
 
    2.6.
 

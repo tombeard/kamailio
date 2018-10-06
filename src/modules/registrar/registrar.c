@@ -74,7 +74,8 @@ static int w_registered(struct sip_msg* _m, char* _d, char* _uri);
 static int w_unregister(struct sip_msg* _m, char* _d, char* _uri);
 static int w_unregister2(struct sip_msg* _m, char* _d, char* _uri, char *_ruid);
 static int w_registered3(struct sip_msg* _m, char* _d, char* _uri, char* _flags);
-static int w_registered4(struct sip_msg* _m, char* _d, char* _uri, char* _flags, char* _actionflags);
+static int w_registered4(struct sip_msg* _m, char* _d, char* _uri, char* _flags,
+		char* _actionflags);
 
 /*! \brief Fixup functions */
 static int domain_fixup(void** param, int param_no);
@@ -84,18 +85,24 @@ static int unreg_fixup(void** param, int param_no);
 static int fetchc_fixup(void** param, int param_no);
 static int registered_fixup(void** param, int param_no);
 /*! \brief Functions */
-static int add_sock_hdr(struct sip_msg* msg, char *str, char *foo);
+static int w_add_sock_hdr(struct sip_msg* msg, char *str, char *foo);
 
-int tcp_persistent_flag = -1;			/*!< if the TCP connection should be kept open */
-int method_filtering = 0;			/*!< if the looked up contacts should be filtered based on supported methods */
-int path_enabled = 0;				/*!< if the Path HF should be handled */
-int path_mode = PATH_MODE_STRICT;		/*!< if the Path HF should be inserted in the reply.
-			*   - STRICT (2): always insert, error if no support indicated in request
-			*   - LAZY   (1): insert only if support indicated in request
-			*   - OFF    (0): never insert */
+/*!< if the TCP connection should be kept open */
+int tcp_persistent_flag = -1;
+/*!< if the looked up contacts should be filtered based on supported methods */
+int method_filtering = 0;
+/*!< if the Path HF should be handled */
+int path_enabled = 0;
+/*!< if the Path HF should be inserted in the reply.
+	*   - STRICT (2): always insert, error if no support indicated in request
+	*   - LAZY   (1): insert only if support indicated in request
+	*   - OFF    (0): never insert */
+int path_mode = PATH_MODE_STRICT;
 
-int path_use_params = 0;			/*!< if the received- and nat-parameters of last Path uri should be used
-						 * to determine if UAC is nat'ed */
+/*!< if the received- and nat-parameters of last Path uri should be used
+	* to determine if UAC is nat'ed */
+int path_use_params = 0;
+
 int path_check_local = 0;
 
 /* sruid to get internal uid */
@@ -106,7 +113,7 @@ int reg_outbound_mode = 0;
 int reg_regid_mode = 0;
 int reg_flow_timer = 0;
 
-int contact_max_size = 255; /* max size of contact URIs */
+int contact_max_size = 512; /* max size of contact URIs */
 
 str match_callid_name = str_init("match_callid");
 str match_received_name = str_init("match_received");
@@ -126,6 +133,9 @@ str sock_hdr_name = {0,0};
 
 /* where to go for event route ("usrloc:contact-expired") */
 int reg_expire_event_rt = -1; /* default disabled */
+str reg_event_callback = STR_NULL;
+
+sr_kemi_eng_t *keng = NULL;
 
 #define RCV_NAME "received"
 str rcv_param = str_init(RCV_NAME);
@@ -176,7 +186,7 @@ static cmd_export_t cmds[] = {
 			ANY_ROUTE },
 	{"registered",   (cmd_function)w_registered4, 4,  registered_fixup, 0,
 			ANY_ROUTE },
-	{"add_sock_hdr", (cmd_function)add_sock_hdr,  1,  fixup_str_null, 0,
+	{"add_sock_hdr", (cmd_function)w_add_sock_hdr,  1,  fixup_spve_null, 0,
 			REQUEST_ROUTE },
 	{"unregister",   (cmd_function)w_unregister,  2,  unreg_fixup, 0,
 			REQUEST_ROUTE| FAILURE_ROUTE },
@@ -220,7 +230,7 @@ static param_export_t params[] = {
 	{"use_path",           INT_PARAM, &path_enabled        					},
 	{"path_mode",          INT_PARAM, &path_mode           					},
 	{"path_use_received",  INT_PARAM, &path_use_params     					},
-	{"path_check_local",   INT_PARAM, &path_check_local                                     },
+	{"path_check_local",   INT_PARAM, &path_check_local                     },
 	{"xavp_cfg",           PARAM_STR, &reg_xavp_cfg     					},
 	{"xavp_rcd",           PARAM_STR, &reg_xavp_rcd     					},
 	{"gruu_enabled",       INT_PARAM, &reg_gruu_enabled    					},
@@ -228,6 +238,7 @@ static param_export_t params[] = {
 	{"regid_mode",         INT_PARAM, &reg_regid_mode					},
 	{"flow_timer",         INT_PARAM, &reg_flow_timer					},
 	{"contact_max_size",   INT_PARAM, &contact_max_size					},
+	{"event_callback",     PARAM_STR, &reg_event_callback				},
 	{0, 0, 0}
 };
 
@@ -250,18 +261,16 @@ stat_export_t mod_stats[] = {
  * Module exports structure
  */
 struct module_exports exports = {
-	"registrar",
+	"registrar", /* module name */
 	DEFAULT_DLFLAGS, /* dlopen flags */
-	cmds,        /* Exported functions */
-	params,      /* Exported parameters */
-	mod_stats,   /* exported statistics */
-	0,           /* exported MI functions */
+	cmds,        /* exported functions */
+	params,      /* exported parameters */
+	0,           /* exported rpc functions */
 	mod_pvs,     /* exported pseudo-variables */
-	0,           /* extra processes */
+	0,           /* response handling function */
 	mod_init,    /* module initialization function */
-	0,
-	mod_destroy, /* destroy function */
-	child_init,  /* Per-child init function */
+	child_init,  /* per-child init function */
+	mod_destroy  /* destroy function */
 };
 
 
@@ -289,11 +298,13 @@ static int mod_init(void)
 
 	/* bind the SL API */
 	if (sl_load_api(&slb)!=0) {
-		LM_ERR("Cannot bind to SL API. Please load the SL module before loading this module.\n");
+		LM_ERR("Cannot bind to SL API. Please load the SL module before"
+				" loading this module.\n");
 		return -1;
 	}
 
-	if(cfg_declare("registrar", registrar_cfg_def, &default_registrar_cfg, cfg_sizeof(registrar), &registrar_cfg)){
+	if(cfg_declare("registrar", registrar_cfg_def, &default_registrar_cfg,
+				cfg_sizeof(registrar), &registrar_cfg)){
 		LM_ERR("Failed to declare the configuration parameters.\n");
 		return -1;
 	}
@@ -318,7 +329,8 @@ static int mod_init(void)
 
 	bind_usrloc = (bind_usrloc_t)find_export("ul_bind_usrloc", 1, 0);
 	if (!bind_usrloc) {
-		LM_ERR("Can't bind to the usrloc module. Please load it before this module.\n");
+		LM_ERR("Can't bind to the usrloc module."
+				"Please load it before this module.\n");
 		return -1;
 	}
 
@@ -339,16 +351,25 @@ static int mod_init(void)
 		return -1;
 	}
 
-	if(ul.register_ulcb != NULL)
-	{
-		reg_expire_event_rt = route_lookup(&event_rt, "usrloc:contact-expired");
-		if (reg_expire_event_rt>=0 && event_rt.rlist[reg_expire_event_rt]==0)
-			reg_expire_event_rt=-1; /* disable */
-		if (reg_expire_event_rt>=0) {
+	if(ul.register_ulcb != NULL) {
+		if (reg_event_callback.s==NULL || reg_event_callback.len<=0 ) {
+			reg_expire_event_rt = route_lookup(&event_rt, "usrloc:contact-expired");
+			if (reg_expire_event_rt>=0 && event_rt.rlist[reg_expire_event_rt]==0)
+				reg_expire_event_rt=-1; /* disable */
+		} else {
+			keng = sr_kemi_eng_get();
+			if(keng==NULL) {
+				LM_DBG("event callback (%s) set, but no cfg engine\n",
+					reg_event_callback.s);
+			}
+		}
+		if (reg_expire_event_rt>=0 || (reg_event_callback.s!=NULL
+					&& keng !=NULL)) {
 			set_child_rpc_sip_mode();
 			if(ul.register_ulcb(UL_CONTACT_EXPIRE, reg_ul_expired_contact, 0)< 0)
 			{
-				LM_ERR("Can not register callback for expired contacts (usrloc module)\n");
+				LM_ERR("Can not register callback for expired contacts"
+						" (usrloc module)\n");
 				return -1;
 			}
 		}
@@ -360,27 +381,30 @@ static int mod_init(void)
 
 	if (sock_hdr_name.s) {
 		if (sock_hdr_name.len==0 || sock_flag==-1) {
-			LM_WARN("empty sock_hdr_name or sock_flag not set -> resetting\n");
+			LM_INFO("empty sock_hdr_name or sock_flag not set -> resetting\n");
 			sock_hdr_name.len = 0;
 			sock_flag = -1;
 		}
 	} else if (reg_xavp_cfg.s) {
 		if (reg_xavp_cfg.len == 0 || sock_flag == -1) {
-			LM_WARN("empty reg_xavp_cfg or sock_flag not set -> resetting\n");
+			LM_DBG("empty reg_xavp_cfg or sock_flag not set -> resetting\n");
 			sock_flag = -1;
 		}
 	} else if (sock_flag!=-1) {
-		LM_WARN("sock_flag defined but no sock_hdr_name or no reg_xavp_cfg -> resetting flag\n");
+		LM_INFO("sock_flag defined but no sock_hdr_name"
+				" or no reg_xavp_cfg -> resetting flag\n");
 		sock_flag = -1;
 	}
 
 	if (reg_outbound_mode < 0 || reg_outbound_mode > 2) {
-		LM_ERR("outbound_mode modparam must be 0 (not supported), 1 (supported), or 2 (supported and required)\n");
+		LM_ERR("outbound_mode modparam must be 0 (not supported),"
+				" 1 (supported), or 2 (supported and required)\n");
 		return -1;
 	}
 
 	if (reg_regid_mode < 0 || reg_regid_mode > 1) {
-		LM_ERR("regid_mode modparam must be 0 (use with outbound), 1 (use always)\n");
+		LM_ERR("regid_mode modparam must be 0 (use with outbound),"
+				" 1 (use always)\n");
 		return -1;
 	}
 
@@ -407,9 +431,9 @@ static int child_init(int rank)
 	if (rank==1) {
 		/* init stats */
 		//TODO if parameters are modified via cfg framework do i change them?
-		update_stat( max_expires_stat, default_registrar_cfg.max_expires );
-		update_stat( max_contacts_stat, default_registrar_cfg.max_contacts );
-		update_stat( default_expire_stat, default_registrar_cfg.default_expires );
+		update_stat(max_expires_stat, default_registrar_cfg.max_expires);
+		update_stat(max_contacts_stat, default_registrar_cfg.max_contacts);
+		update_stat(default_expire_stat, default_registrar_cfg.default_expires);
 	}
 
 	return 0;
@@ -444,7 +468,8 @@ static int w_save3(struct sip_msg* _m, char* _d, char* _cflags, char* _uri)
 static int w_lookup(struct sip_msg* _m, char* _d, char* _uri)
 {
 	str uri = {0};
-	if(_uri!=NULL && (fixup_get_svalue(_m, (gparam_p)_uri, &uri)!=0 || uri.len<=0))
+	if(_uri!=NULL && (fixup_get_svalue(_m, (gparam_p)_uri, &uri)!=0
+				|| uri.len<=0))
 	{
 		LM_ERR("invalid uri parameter\n");
 		return -1;
@@ -459,7 +484,8 @@ static int w_lookup(struct sip_msg* _m, char* _d, char* _uri)
 static int w_lookup_to_dset(struct sip_msg* _m, char* _d, char* _uri)
 {
 	str uri = {0};
-	if(_uri!=NULL && (fixup_get_svalue(_m, (gparam_p)_uri, &uri)!=0 || uri.len<=0))
+	if(_uri!=NULL && (fixup_get_svalue(_m, (gparam_p)_uri, &uri)!=0
+				|| uri.len<=0))
 	{
 		LM_ERR("invalid uri parameter\n");
 		return -1;
@@ -477,10 +503,23 @@ static int w_lookup_branches(sip_msg_t* _m, char* _d, char* _p2)
 }
 
 
+static int ki_lookup_branches(sip_msg_t* _m, str* _dtable)
+{
+	udomain_t* d;
+
+	if(ul.get_udomain(_dtable->s, &d)<0) {
+		LM_ERR("usrloc domain [%s] not found\n", _dtable->s);
+		return -1;
+	}
+
+	return lookup_branches(_m, d);
+}
+
 static int w_registered(struct sip_msg* _m, char* _d, char* _uri)
 {
 	str uri = {0};
-	if(_uri!=NULL && (fixup_get_svalue(_m, (gparam_p)_uri, &uri)!=0 || uri.len<=0))
+	if(_uri!=NULL && (fixup_get_svalue(_m, (gparam_p)_uri, &uri)!=0
+				|| uri.len<=0))
 	{
 		LM_ERR("invalid uri parameter\n");
 		return -1;
@@ -488,11 +527,24 @@ static int w_registered(struct sip_msg* _m, char* _d, char* _uri)
 	return registered(_m, (udomain_t*)_d, (uri.len>0)?&uri:NULL);
 }
 
+static int ki_registered_uri(sip_msg_t* _m, str* _dtable, str* _uri)
+{
+	udomain_t* d;
+
+	if(ul.get_udomain(_dtable->s, &d)<0) {
+		LM_ERR("usrloc domain [%s] not found\n", _dtable->s);
+		return -1;
+	}
+
+	return registered(_m, d, (_uri && _uri->len>0)?_uri:NULL);
+}
+
 static int w_registered3(struct sip_msg* _m, char* _d, char* _uri, char* _flags)
 {
 	str uri = {0};
 	int flags = 0;
-	if(_uri!=NULL && (fixup_get_svalue(_m, (gparam_p)_uri, &uri)!=0 || uri.len<=0))
+	if(_uri!=NULL && (fixup_get_svalue(_m, (gparam_p)_uri, &uri)!=0
+				|| uri.len<=0))
 	{
 		LM_ERR("invalid uri parameter\n");
 		return -1;
@@ -505,12 +557,26 @@ static int w_registered3(struct sip_msg* _m, char* _d, char* _uri, char* _flags)
 	return registered3(_m, (udomain_t*)_d, (uri.len>0)?&uri:NULL, flags);
 }
 
-static int w_registered4(struct sip_msg* _m, char* _d, char* _uri, char* _flags, char* _actionflags)
+static int ki_registered_flags(sip_msg_t* _m, str* _dtable, str* _uri, int _f)
+{
+	udomain_t* d;
+
+	if(ul.get_udomain(_dtable->s, &d)<0) {
+		LM_ERR("usrloc domain [%s] not found\n", _dtable->s);
+		return -1;
+	}
+
+	return registered3(_m, d, (_uri && _uri->len>0)?_uri:NULL, _f);
+}
+
+static int w_registered4(struct sip_msg* _m, char* _d, char* _uri,
+		char* _flags, char* _actionflags)
 {
 	str uri = {0};
 	int flags = 0;
 	int actionflags = 0;
-	if(_uri!=NULL && (fixup_get_svalue(_m, (gparam_p)_uri, &uri)!=0 || uri.len<=0))
+	if(_uri!=NULL && (fixup_get_svalue(_m, (gparam_p)_uri, &uri)!=0
+				|| uri.len<=0))
 	{
 		LM_ERR("invalid uri parameter\n");
 		return -1;
@@ -520,12 +586,27 @@ static int w_registered4(struct sip_msg* _m, char* _d, char* _uri, char* _flags,
 		LM_ERR("invalid flags parameter\n");
 		return -1;
 	}
-	if(_actionflags!=NULL && (fixup_get_ivalue(_m, (fparam_t*)_actionflags, &actionflags)) < 0)
+	if(_actionflags!=NULL && (fixup_get_ivalue(_m, (fparam_t*)_actionflags,
+					&actionflags)) < 0)
 	{
 		LM_ERR("invalid action flag parameter\n");
 		return -1;
 	}
-	return registered4(_m, (udomain_t*)_d, (uri.len>0)?&uri:NULL, flags, actionflags);
+	return registered4(_m, (udomain_t*)_d, (uri.len>0)?&uri:NULL, flags,
+			actionflags);
+}
+
+static int ki_registered_action(sip_msg_t* _m, str* _dtable, str* _uri,
+		int _f, int _aflags)
+{
+	udomain_t* d;
+
+	if(ul.get_udomain(_dtable->s, &d)<0) {
+		LM_ERR("usrloc domain [%s] not found\n", _dtable->s);
+		return -1;
+	}
+
+	return registered4(_m, d, (_uri && _uri->len>0)?_uri:NULL, _f, _aflags);
 }
 
 static int w_unregister(struct sip_msg* _m, char* _d, char* _uri)
@@ -538,6 +619,22 @@ static int w_unregister(struct sip_msg* _m, char* _d, char* _uri)
 	}
 
 	return unregister(_m, (udomain_t*)_d, &uri, NULL);
+}
+
+static int ki_unregister(sip_msg_t* _m, str* _dtable, str* _uri)
+{
+	udomain_t* d;
+
+	if(_uri==NULL || _uri->len<=0) {
+		LM_ERR("invalid uri parameter\n");
+		return -1;
+	}
+	if(ul.get_udomain(_dtable->s, &d)<0) {
+		LM_ERR("usrloc domain [%s] not found\n", _dtable->s);
+		return -1;
+	}
+
+	return unregister(_m, d, _uri, NULL);
 }
 
 static int w_unregister2(struct sip_msg* _m, char* _d, char* _uri, char *_ruid)
@@ -555,8 +652,23 @@ static int w_unregister2(struct sip_msg* _m, char* _d, char* _uri, char *_ruid)
 		return -1;
 	}
 
-
 	return unregister(_m, (udomain_t*)_d, &uri, &ruid);
+}
+
+static int ki_unregister_ruid(sip_msg_t* _m, str* _dtable, str* _uri, str *_ruid)
+{
+	udomain_t* d;
+
+	if(_uri==NULL || _uri->len<=0) {
+		LM_ERR("invalid uri parameter\n");
+		return -1;
+	}
+	if(ul.get_udomain(_dtable->s, &d)<0) {
+		LM_ERR("usrloc domain [%s] not found\n", _dtable->s);
+		return -1;
+	}
+
+	return unregister(_m, d, _uri, _ruid);
 }
 
 /*! \brief
@@ -680,15 +792,17 @@ static void mod_destroy(void)
 #include "../../core/ip_addr.h"
 #include "../../core/ut.h"
 
-static int add_sock_hdr(struct sip_msg* msg, char *name, char *foo)
+static int ki_add_sock_hdr(sip_msg_t* msg, str *hdr_name)
 {
 	struct socket_info* si;
 	struct lump* anchor;
-	str *hdr_name;
 	str hdr;
 	char *p;
 
-	hdr_name = (str*)name;
+	if(hdr_name==NULL || hdr_name->s==NULL || hdr_name->len<=0) {
+		LM_ERR("invalid header name parameter\n");
+		return -1;
+	}
 	si = msg->rcv.bind_address;
 
 	if (parse_headers( msg, HDR_EOH_F, 0) == -1) {
@@ -737,20 +851,37 @@ error:
 	return -1;
 }
 
-void default_expires_stats_update(str* gname, str* name){
-	update_stat(default_expire_stat, cfg_get(registrar, registrar_cfg, default_expires));
+static int w_add_sock_hdr(struct sip_msg* msg, char *name, char *foo)
+{
+	str hdr_name;
+	if(fixup_get_svalue(msg, (gparam_t*)name, &hdr_name)<0) {
+		LM_ERR("cannot get the header name\n");
+		return -1;
+	}
+	return ki_add_sock_hdr(msg, &hdr_name);
 }
 
-void max_expires_stats_update(str* gname, str* name){
-	update_stat(max_expires_stat, cfg_get(registrar, registrar_cfg, max_expires));
+void default_expires_stats_update(str* gname, str* name)
+{
+	update_stat(default_expire_stat, cfg_get(registrar, registrar_cfg,
+				default_expires));
 }
 
-void default_expires_range_update(str* gname, str* name){
-	update_stat(default_expire_range_stat, cfg_get(registrar, registrar_cfg, default_expires_range));
+void max_expires_stats_update(str* gname, str* name)
+{
+	update_stat(max_expires_stat, cfg_get(registrar, registrar_cfg,
+				max_expires));
+}
+
+void default_expires_range_update(str* gname, str* name)
+{
+	update_stat(default_expire_range_stat, cfg_get(registrar, registrar_cfg,
+				default_expires_range));
 }
 
 void expires_range_update(str* gname, str* name){
-	update_stat(expire_range_stat, cfg_get(registrar, registrar_cfg, expires_range));
+	update_stat(expire_range_stat, cfg_get(registrar, registrar_cfg,
+				expires_range));
 }
 
 /**
@@ -782,12 +913,61 @@ static sr_kemi_t sr_kemi_registrar_exports[] = {
 		{ SR_KEMIP_STR, SR_KEMIP_STR, SR_KEMIP_NONE,
 			SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE }
 	},
+	{ str_init("registrar"), str_init("lookup_branches"),
+		SR_KEMIP_INT, ki_lookup_branches,
+		{ SR_KEMIP_STR, SR_KEMIP_NONE, SR_KEMIP_NONE,
+			SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE }
+	},
 	{ str_init("registrar"), str_init("registered"),
 		SR_KEMIP_INT, regapi_registered,
 		{ SR_KEMIP_STR, SR_KEMIP_NONE, SR_KEMIP_NONE,
 			SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE }
 	},
-
+	{ str_init("registrar"), str_init("registered_uri"),
+		SR_KEMIP_INT, ki_registered_uri,
+		{ SR_KEMIP_STR, SR_KEMIP_STR, SR_KEMIP_NONE,
+			SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE }
+	},
+	{ str_init("registrar"), str_init("registered_flags"),
+		SR_KEMIP_INT, ki_registered_flags,
+		{ SR_KEMIP_STR, SR_KEMIP_STR, SR_KEMIP_INT,
+			SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE }
+	},
+	{ str_init("registrar"), str_init("registered_action"),
+		SR_KEMIP_INT, ki_registered_action,
+		{ SR_KEMIP_STR, SR_KEMIP_STR, SR_KEMIP_INT,
+			SR_KEMIP_INT, SR_KEMIP_NONE, SR_KEMIP_NONE }
+	},
+	{ str_init("registrar"), str_init("set_q_override"),
+		SR_KEMIP_INT, regapi_set_q_override,
+		{ SR_KEMIP_STR, SR_KEMIP_NONE, SR_KEMIP_NONE,
+			SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE }
+	},
+	{ str_init("registrar"), str_init("add_sock_hdr"),
+		SR_KEMIP_INT, ki_add_sock_hdr,
+		{ SR_KEMIP_STR, SR_KEMIP_NONE, SR_KEMIP_NONE,
+			SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE }
+	},
+	{ str_init("registrar"), str_init("unregister"),
+		SR_KEMIP_INT, ki_unregister,
+		{ SR_KEMIP_STR, SR_KEMIP_STR, SR_KEMIP_NONE,
+			SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE }
+	},
+	{ str_init("registrar"), str_init("unregister_ruid"),
+		SR_KEMIP_INT, ki_unregister_ruid,
+		{ SR_KEMIP_STR, SR_KEMIP_STR, SR_KEMIP_STR,
+			SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE }
+	},
+	{ str_init("registrar"), str_init("reg_fetch_contacts"),
+		SR_KEMIP_INT, ki_reg_fetch_contacts,
+		{ SR_KEMIP_STR, SR_KEMIP_STR, SR_KEMIP_STR,
+			SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE }
+	},
+	{ str_init("registrar"), str_init("reg_free_contacts"),
+		SR_KEMIP_INT, ki_reg_free_contacts,
+		{ SR_KEMIP_STR, SR_KEMIP_NONE, SR_KEMIP_NONE,
+			SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE }
+	},
 	{ {0, 0}, {0, 0}, 0, NULL, { 0, 0, 0, 0, 0, 0 } }
 };
 

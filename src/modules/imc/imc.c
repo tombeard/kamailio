@@ -45,6 +45,7 @@
 #include "../../core/hashes.h"
 #include "../../core/rpc.h"
 #include "../../core/rpc_lookup.h"
+#include "../../core/kemi.h"
 
 #include "../../modules/tm/tm_load.h"
 
@@ -85,7 +86,7 @@ str extra_hdrs = {NULL, 0};
 static int mod_init(void);
 static int child_init(int);
 
-static int imc_manager(struct sip_msg*, char *, char *);
+static int w_imc_manager(struct sip_msg*, char *, char *);
 
 static int imc_rpc_init(void);
 
@@ -98,7 +99,7 @@ struct tm_binds tmb;
 void inv_callback( struct cell *t, int type, struct tmcb_params *ps);
 
 static cmd_export_t cmds[]={
-	{"imc_manager",  (cmd_function)imc_manager, 0, 0, 0, REQUEST_ROUTE},
+	{"imc_manager",  (cmd_function)w_imc_manager, 0, 0, 0, REQUEST_ROUTE},
 	{0,0,0,0,0,0}
 };
 
@@ -133,18 +134,12 @@ struct module_exports exports= {
 	DEFAULT_DLFLAGS, /* dlopen flags */
 	cmds,       /* exported commands */
 	params,     /* exported parameters */
-#ifdef STATISTICS
-	imc_stats,
-#else
-	0,          /* exported statistics */
-#endif
-	0,          /* exported MI functions */
+	0,          /* exported rpc functions */
 	0,          /* exported pseudo-variables */
-	0,          /* extra processes */
-	mod_init,   /* mod init */
-	0,          /* response handler */
-	(destroy_function) destroy,  /* destroy function */
-	child_init  /* child init */
+	0,          /* response handling function */
+	mod_init,   /* module init function */
+	child_init, /* child init function */
+	destroy     /* module destroy function */
 };
 
 /**
@@ -235,7 +230,7 @@ int add_from_db(void)
 			goto error;
 		}
 
-		if(m_res && m_res->n <=0)
+		if(m_res==NULL || m_res->n<=0)
 		{
 			LM_INFO("the query returned no result\n");
 			er_ret = 0;
@@ -302,11 +297,6 @@ int add_from_db(void)
 	{
 		imc_dbf.free_result(imc_db, r_res);
 		r_res = NULL;
-	}
-	if(m_res)
-	{
-		imc_dbf.free_result(imc_db, m_res);
-		m_res = NULL;
 	}
 
 	return 0;
@@ -449,7 +439,7 @@ static int child_init(int rank)
 }
 
 
-static int imc_manager(struct sip_msg* msg, char *str1, char *str2)
+static int ki_imc_manager(struct sip_msg* msg)
 {
 	imc_cmd_t cmd;
 	str body;
@@ -616,6 +606,11 @@ done:
 
 error:
 	return ret;
+}
+
+static int w_imc_manager(struct sip_msg* msg, char *str1, char *str2)
+{
+	return ki_imc_manager(msg);
 }
 
 /**
@@ -818,5 +813,29 @@ static int imc_rpc_init(void)
 		LM_ERR("failed to register RPC commands\n");
 		return -1;
 	}
+	return 0;
+}
+
+/**
+ *
+ */
+/* clang-format off */
+static sr_kemi_t sr_kemi_imc_exports[] = {
+	{ str_init("imc"), str_init("imc_manager"),
+		SR_KEMIP_INT, ki_imc_manager,
+		{ SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE,
+			SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE }
+	},
+
+	{ {0, 0}, {0, 0}, 0, NULL, { 0, 0, 0, 0, 0, 0 } }
+};
+/* clang-format on */
+
+/**
+ *
+ */
+int mod_register(char *path, int *dlflags, void *p1, void *p2)
+{
+	sr_kemi_modules_add(sr_kemi_imc_exports);
 	return 0;
 }

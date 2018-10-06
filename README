@@ -1,6 +1,6 @@
 
 
-Kamailio v5.0
+Kamailio v5.2
 =============
 
 https://www.kamailio.org
@@ -106,7 +106,7 @@ To receive feedback to your inquiries, we recommend you to subscribe
 to the sr-users mailing list and post your queries there. This mailing
 list is set up for mutual help by the community of Kamailio users and developers.
 To participate in the mailing list, subscribe at the following web address:
-         https://lists.sip-router.org/mailman/listinfo/sr-users
+         https://lists.kamailio.org/mailman/listinfo/sr-users
 
 The IRC channel #kamailio on freenode.net is a place where to meet and discuss
 with other members of Kamailio community.
@@ -141,5 +141,5 @@ Particularly, it includes:
 - download links
 - etc.
 
-You can also follow us on Twitter as @kamailioproject and like us on Facebook
+You can also follow us on Twitter as @kamailio and like us on Facebook
 to get regular updates.

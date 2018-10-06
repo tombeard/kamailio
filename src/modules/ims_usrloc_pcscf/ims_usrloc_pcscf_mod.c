@@ -84,8 +84,6 @@ str db_url          = str_init(DEFAULT_DB_URL);	/*!< Database URL */
 int timer_interval  = 60;						/*!< Timer interval in seconds */
 int db_mode         = 0;						/*!< Database sync scheme: 0-no db, 1-write through, 2-write back, 3-only db */
 int ul_fetch_rows 	= 2000;
-int hashing_type 	= 0;						/*!< has type for storing P-CSCF contacts - 0 - use full contact AOR, 1 - use IP:PORT only */
-
 int match_contact_host_port = 1;					/*!< Should we match contact just based on rui host and port*/
 
 db1_con_t* ul_dbh = 0;
@@ -111,7 +109,6 @@ static param_export_t params[] = {
 	{"db_url",              PARAM_STR, &db_url        },
 	{"timer_interval",      INT_PARAM, &timer_interval  },
 	{"db_mode",             INT_PARAM, &db_mode         },
-	{"hashing_type",		INT_PARAM, &hashing_type	},
 
 	{"match_contact_host_port",		INT_PARAM, &match_contact_host_port	},
         {"expires_grace",		INT_PARAM, &expires_grace	},
@@ -128,17 +125,15 @@ stat_export_t mod_stats[] = {
 
 struct module_exports exports = {
 	"ims_usrloc_pcscf",
-	DEFAULT_DLFLAGS, /*!< dlopen flags */
-	cmds,       /*!< Exported functions */
-	params,     /*!< Export parameters */
-	mod_stats,  /*!< exported statistics */
-	0,          /*!< exported MI functions */
-	0,          /*!< exported pseudo-variables */
-	0,          /*!< extra processes */
-	mod_init,   /*!< Module initialization function */
-	0,          /*!< Response function */
-	destroy,    /*!< Destroy function */
-	child_init  /*!< Child initialization function */
+	DEFAULT_DLFLAGS, /* dlopen flags */
+	cmds,		/* exported functions */
+	params,		/* export parameters */
+	0,		/* exported RPC functions */
+	0,		/* exported pseudo-variables */
+	0,		/* response·function */
+	mod_init,	/* module initialization function */
+	child_init,	/* per-child·init·function*/
+	destroy		/* destroy function */
 };
 
 

@@ -348,7 +348,7 @@ modules-cfg modules-list modules-lst:
 	rm -f modules.lst
 	$(MAKE) modules.lst
 
-ifneq ($(wildcard .git),)
+ifneq ($(wildcard ../.git),)
 # if .git/ exists
 repo_ver=$(shell  RV=`git rev-parse --verify --short=6 HEAD 2>/dev/null`;\
 					[ -n "$$RV" ] && \
@@ -358,7 +358,7 @@ repo_ver=$(shell  RV=`git rev-parse --verify --short=6 HEAD 2>/dev/null`;\
 						RV="$$RV"-dirty; echo "$$RV")
 repo_hash=$(subst -dirty,,$(repo_ver))
 repo_state=$(subst %-dirty,dirty,$(findstring -dirty,$(repo_ver)))
-autover_h_dep=.git $(filter-out $(auto_gen), $(sources)) core/cfg.y core/cfg.lex Makefile
+autover_h_dep=../.git $(filter-out $(auto_gen), $(sources)) core/cfg.y core/cfg.lex Makefile
 else
 # else if .git/ does not exist
 repo_ver=
@@ -609,25 +609,27 @@ bin:
 
 .PHONY: deb
 deb:
-	-@if [ -d debian ]; then \
-		dpkg-buildpackage -rfakeroot -tc; \
+	(cd ..; \
+	if [ -d debian ]; then \
+		dpkg-buildpackage -rfakeroot -tc -uc -us; \
 		rm debian; \
 	else \
-		ln -s ../pkg/$(MAIN_NAME)/deb/debian debian; \
-		dpkg-buildpackage -rfakeroot -tc; \
+		ln -s pkg/$(MAIN_NAME)/deb/debian debian; \
+		dpkg-buildpackage -rfakeroot -tc -uc -us; \
 		rm debian; \
-	fi
+	fi)
 
 .PHONY: deb-stable
 deb-stable:
-	-@if [ -d debian ]; then \
-		dpkg-buildpackage -rfakeroot -tc; \
+	(cd ..; \
+	if [ -d debian ]; then \
+		dpkg-buildpackage -rfakeroot -tc -uc -us; \
 		rm debian; \
 	else \
-		ln -s ../pkg/$(MAIN_NAME)/deb/jessie debian; \
-		dpkg-buildpackage -rfakeroot -tc; \
+		ln -s pkg/$(MAIN_NAME)/deb/jessie debian; \
+		dpkg-buildpackage -rfakeroot -tc -uc -us; \
 		rm debian; \
-	fi
+	fi)
 
 .PHONY: sunpkg
 sunpkg:
@@ -698,8 +700,9 @@ $(man_prefix)/$(man_dir)/man7:
 $(man_prefix)/$(man_dir)/man5:
 		mkdir -p $(man_prefix)/$(man_dir)/man5
 
-# note: sed with POSIX.1 regex doesn't support |, + or ? (darwin, solaris ...) 
+# note: sed with POSIX.1 regex doesn't support |, + or ? (darwin, solaris ...)
 install-cfg: $(cfg_prefix)/$(cfg_dir)
+	@# main configuration file
 	@if [ -f ../etc/$(CFG_NAME).cfg ]; then \
 			sed $(foreach m,$(modules_dirs),\
 					-e "s#/usr/[^:]*lib/$(CFG_NAME)/$(m)\([:/\"]\)#$($(m)_target)\1#g") \
@@ -713,34 +716,7 @@ install-cfg: $(cfg_prefix)/$(cfg_dir)
 					$(cfg_prefix)/$(cfg_dir)$(MAIN_NAME).cfg; \
 			fi; \
 		fi
-	@if [ -f ../etc/$(CFG_NAME)-basic.cfg ]; then \
-			sed $(foreach m,$(modules_dirs),\
-					-e "s#/usr/[^:]*lib/$(CFG_NAME)/$(m)\([:/\"]\)#$($(m)_target)\1#g") \
-					-e "s#/usr/local/etc/$(CFG_NAME)/#$(cfg_target)#g" \
-				< ../etc/$(CFG_NAME)-basic.cfg \
-				> $(cfg_prefix)/$(cfg_dir)$(MAIN_NAME)-basic.cfg.sample; \
-			chmod 644 $(cfg_prefix)/$(cfg_dir)$(MAIN_NAME)-basic.cfg.sample; \
-			if [ -z "${skip_cfg_install}" -a \
-					! -f $(cfg_prefix)/$(cfg_dir)$(MAIN_NAME)-basic.cfg ]; then \
-				mv -f $(cfg_prefix)/$(cfg_dir)$(MAIN_NAME)-basic.cfg.sample \
-					$(cfg_prefix)/$(cfg_dir)$(MAIN_NAME)-basic.cfg; \
-			fi; \
-		fi
-	@if [ -f ../etc/$(CFG_NAME)-oob.cfg ]; then \
-			sed $(foreach m,$(modules_dirs),\
-					-e "s#/usr/[^:]*lib/$(CFG_NAME)/$(m)\([:/\"]\)#$($(m)_target)\1#g") \
-					-e "s#/usr/local/etc/$(CFG_NAME)/#$(cfg_target)#g" \
-				< ../etc/$(CFG_NAME)-oob.cfg \
-				> $(cfg_prefix)/$(cfg_dir)$(MAIN_NAME)-advanced.cfg.sample; \
-			chmod 644 $(cfg_prefix)/$(cfg_dir)$(MAIN_NAME)-advanced.cfg.sample; \
-			if [ -z "${skip_cfg_install}" -a \
-					! -f $(cfg_prefix)/$(cfg_dir)$(MAIN_NAME)-advanced.cfg ]; \
-			then \
-				mv -f $(cfg_prefix)/$(cfg_dir)$(MAIN_NAME)-advanced.cfg.sample \
-					$(cfg_prefix)/$(cfg_dir)$(MAIN_NAME)-advanced.cfg; \
-			fi; \
-		fi
-	@# other configs
+	@# other configuration files
 	@for r in $(C_INSTALL_CFGS) ""; do \
 			if [ -n "$$r" ]; then \
 				if [ -f "$$r" ]; then \
@@ -764,10 +740,53 @@ install-cfg: $(cfg_prefix)/$(cfg_dir)
 				fi ; \
 			fi ; \
 			: ; done; true
-	@# radius dictionary
-	@$(INSTALL_TOUCH) $(cfg_prefix)/$(cfg_dir)/dictionary.$(CFG_NAME)
-	@$(INSTALL_CFG) ../etc/dictionary.$(CFG_NAME) $(cfg_prefix)/$(cfg_dir)
 	@echo "config files installed"
+
+# additional examples of configuration files
+install-cfg-extras: $(cfg_prefix)/$(cfg_dir)
+	@if [ -f ../misc/examples/pkg/$(CFG_NAME)-basic.cfg ]; then \
+			sed $(foreach m,$(modules_dirs),\
+					-e "s#/usr/[^:]*lib/$(CFG_NAME)/$(m)\([:/\"]\)#$($(m)_target)\1#g") \
+					-e "s#/usr/local/etc/$(CFG_NAME)/#$(cfg_target)#g" \
+				< ../misc/examples/pkg/$(CFG_NAME)-basic.cfg \
+				> $(cfg_prefix)/$(cfg_dir)$(MAIN_NAME)-basic.cfg.sample; \
+			chmod 644 $(cfg_prefix)/$(cfg_dir)$(MAIN_NAME)-basic.cfg.sample; \
+			if [ -z "${skip_cfg_install}" -a \
+					! -f $(cfg_prefix)/$(cfg_dir)$(MAIN_NAME)-basic.cfg ]; then \
+				mv -f $(cfg_prefix)/$(cfg_dir)$(MAIN_NAME)-basic.cfg.sample \
+					$(cfg_prefix)/$(cfg_dir)$(MAIN_NAME)-basic.cfg; \
+			fi; \
+		fi
+	@if [ -f ../misc/examples/pkg/$(CFG_NAME)-oob.cfg ]; then \
+			sed $(foreach m,$(modules_dirs),\
+					-e "s#/usr/[^:]*lib/$(CFG_NAME)/$(m)\([:/\"]\)#$($(m)_target)\1#g") \
+					-e "s#/usr/local/etc/$(CFG_NAME)/#$(cfg_target)#g" \
+				< ../misc/examples/pkg/$(CFG_NAME)-oob.cfg \
+				> $(cfg_prefix)/$(cfg_dir)$(MAIN_NAME)-advanced.cfg.sample; \
+			chmod 644 $(cfg_prefix)/$(cfg_dir)$(MAIN_NAME)-advanced.cfg.sample; \
+			if [ -z "${skip_cfg_install}" -a \
+					! -f $(cfg_prefix)/$(cfg_dir)$(MAIN_NAME)-advanced.cfg ]; \
+			then \
+				mv -f $(cfg_prefix)/$(cfg_dir)$(MAIN_NAME)-advanced.cfg.sample \
+					$(cfg_prefix)/$(cfg_dir)$(MAIN_NAME)-advanced.cfg; \
+			fi; \
+		fi
+
+install-cfg-pkg: $(cfg_prefix)/$(cfg_dir)
+	@if [ -f ../misc/examples/pkg/sipcapture.cfg ]; then \
+			sed $(foreach m,$(modules_dirs),\
+					-e "s#/usr/[^:]*lib/$(CFG_NAME)/$(m)\([:/\"]\)#$($(m)_target)\1#g") \
+					-e "s#/usr/local/etc/$(CFG_NAME)/#$(cfg_target)#g" \
+				< ../misc/examples/pkg/sipcapture.cfg \
+				> $(cfg_prefix)/$(cfg_dir)$(MAIN_NAME)-sipcapture.cfg.sample; \
+			chmod 644 $(cfg_prefix)/$(cfg_dir)$(MAIN_NAME)-sipcapture.cfg.sample; \
+			if [ -z "${skip_cfg_install}" -a \
+					! -f $(cfg_prefix)/$(cfg_dir)$(MAIN_NAME)-sipcapture.cfg ]; \
+			then \
+				mv -f $(cfg_prefix)/$(cfg_dir)$(MAIN_NAME)-sipcapture.cfg.sample \
+					$(cfg_prefix)/$(cfg_dir)$(MAIN_NAME)-sipcapture.cfg; \
+			fi; \
+		fi
 
 install-bin: $(bin_prefix)/$(bin_dir) $(NAME)
 	$(INSTALL_TOUCH) $(bin_prefix)/$(bin_dir)/$(NAME)

@@ -26,11 +26,12 @@
  * Module: \ref topos
  */
 
-/*! \defgroup topoh Kamailio :: Topology stripping
+/*! \defgroup topos Kamailio :: Topology stripping
  *
  * This module removes the SIP routing headers that show topology details.
  * The script interpreter gets the SIP messages with full content, so all
  * existing functionality is preserved.
+ * @{
  */
 
 #include <stdio.h>
@@ -50,6 +51,9 @@
 #include "../../core/parser/parse_to.h"
 #include "../../core/parser/parse_from.h"
 #include "../../core/timer_proc.h"
+#include "../../core/fmsg.h"
+#include "../../core/onsend.h"
+#include "../../core/kemi.h"
 
 #include "../../lib/srdb1/db.h"
 #include "../../lib/srutils/sruid.h"
@@ -81,10 +85,23 @@ extern int _tps_dialog_expire;
 
 int _tps_clean_interval = 60;
 
+#define TPS_EVENTRT_OUTGOING 1
+#define TPS_EVENTRT_SENDING  2
+static int _tps_eventrt_mode = TPS_EVENTRT_OUTGOING | TPS_EVENTRT_SENDING;
+static int _tps_eventrt_outgoing = -1;
+static str _tps_eventrt_callback = STR_NULL;
+static str _tps_eventrt_outgoing_name = str_init("topos:msg-outgoing");
+static int _tps_eventrt_sending = -1;
+static str _tps_eventrt_sending_name = str_init("topos:msg-sending");
+str _tps_contact_host = str_init("");
+
 sanity_api_t scb;
 
-int tps_msg_received(void *data);
-int tps_msg_sent(void *data);
+int tps_msg_received(sr_event_param_t *evp);
+int tps_msg_sent(sr_event_param_t *evp);
+
+static int tps_execute_event_route(sip_msg_t *msg, sr_event_param_t *evp,
+		int evtype, int evidx, str *evname);
 
 /** module functions */
 /* Module init function prototype */
@@ -111,24 +128,25 @@ static param_export_t params[]={
 	{"branch_expire",	PARAM_INT, &_tps_branch_expire},
 	{"dialog_expire",	PARAM_INT, &_tps_dialog_expire},
 	{"clean_interval",	PARAM_INT, &_tps_clean_interval},
+	{"event_callback",	PARAM_STR, &_tps_eventrt_callback},
+	{"event_mode",		PARAM_STR, &_tps_eventrt_mode},
+	{"contact_host",	PARAM_STR, &_tps_contact_host},
 	{0,0,0}
 };
 
 
 /** module exports */
 struct module_exports exports= {
-	"topos",
+	"topos",    /* module name */
 	DEFAULT_DLFLAGS, /* dlopen flags */
-	cmds,
-	params,
-	0,          /* exported statistics */
-	0,          /* exported MI functions */
+	cmds,       /* exported  functions */
+	params,     /* exported parameters */
+	0,          /* exported rpc functions */
 	0,          /* exported pseudo-variables */
-	0,          /* extra processes */
+	0,          /* response handling function */
 	mod_init,   /* module initialization function */
-	0,
-	destroy,    /* destroy function */
-	child_init  /* child initialization function */
+	child_init, /* child initialization function */
+	destroy     /* destroy function */
 };
 
 /**
@@ -136,6 +154,22 @@ struct module_exports exports= {
  */
 static int mod_init(void)
 {
+	_tps_eventrt_outgoing = route_lookup(&event_rt, _tps_eventrt_outgoing_name.s);
+	if(_tps_eventrt_outgoing<0
+			|| event_rt.rlist[_tps_eventrt_outgoing]==NULL) {
+		_tps_eventrt_outgoing = -1;
+	}
+	_tps_eventrt_sending = route_lookup(&event_rt, _tps_eventrt_sending_name.s);
+	if(_tps_eventrt_sending<0
+			|| event_rt.rlist[_tps_eventrt_sending]==NULL) {
+		_tps_eventrt_sending = -1;
+	}
+
+	if(faked_msg_init()<0) {
+		LM_ERR("failed to init fmsg\n");
+		return -1;
+	}
+
 	if(_tps_storage.len==2 && strncmp(_tps_storage.s, "db", 2)==0) {
 		/* Find a database module */
 		if (db_bind_mod(&_tps_db_url, &_tpsdbf)) {
@@ -240,17 +274,19 @@ int tps_prepare_msg(sip_msg_t *msg)
 		return 1;
 	}
 
-	if (parse_headers(msg, HDR_EOH_F, 0)==-1) {
-		LM_DBG("parsing headers failed [[%.*s]]\n",
-				msg->len, msg->buf);
-		return 2;
+	if(parse_headers(msg, HDR_VIA2_F, 0)<0) {
+		LM_DBG("no via2 has been parsed\n");
 	}
-
-	parse_headers(msg, HDR_VIA2_F, 0);
 
 	if(parse_headers(msg, HDR_CSEQ_F, 0)!=0 || msg->cseq==NULL) {
 		LM_ERR("cannot parse cseq header\n");
 		return -1;
+	}
+
+	if (parse_headers(msg, HDR_EOH_F, 0)==-1) {
+		LM_DBG("parsing headers failed [[%.*s]]\n",
+				msg->len, msg->buf);
+		return 2;
 	}
 
 	if(parse_from_header(msg)<0) {
@@ -274,18 +310,20 @@ int tps_prepare_msg(sip_msg_t *msg)
 /**
  *
  */
-int tps_msg_received(void *data)
+int tps_msg_received(sr_event_param_t *evp)
 {
 	sip_msg_t msg;
 	str *obuf;
 	char *nbuf = NULL;
 	int dialog;
+	int ret;
 
-	obuf = (str*)data;
+	obuf = (str*)evp->data;
 	memset(&msg, 0, sizeof(sip_msg_t));
 	msg.buf = obuf->s;
 	msg.len = obuf->len;
 
+	ret = 0;
 	if(tps_prepare_msg(&msg)!=0) {
 		goto done;
 	}
@@ -310,17 +348,22 @@ int tps_msg_received(void *data)
 		/* reply */
 		if(msg.first_line.u.reply.statuscode==100) {
 			/* nothing to do - it should be absorbed */
-			return 0;
+			goto done;
 		}
 		tps_response_received(&msg);
 	}
 
 	nbuf = tps_msg_update(&msg, (unsigned int*)&obuf->len);
 
+	if(nbuf==NULL) {
+		LM_ERR("not enough pkg memory for new message\n");
+		ret = -1;
+		goto done;
+	}
 	if(obuf->len>=BUF_SIZE) {
 		LM_ERR("new buffer overflow (%d)\n", obuf->len);
-		pkg_free(nbuf);
-		return -1;
+		ret = -1;
+		goto done;
 	}
 	memcpy(obuf->s, nbuf, obuf->len);
 	obuf->s[obuf->len] = '\0';
@@ -329,20 +372,26 @@ done:
 	if(nbuf!=NULL)
 		pkg_free(nbuf);
 	free_sip_msg(&msg);
-	return 0;
+	return ret;
 }
 
 /**
  *
  */
-int tps_msg_sent(void *data)
+int tps_msg_sent(sr_event_param_t *evp)
 {
 	sip_msg_t msg;
 	str *obuf;
 	int dialog;
 	int local;
 
-	obuf = (str*)data;
+	obuf = (str*)evp->data;
+
+	if(tps_execute_event_route(NULL, evp, TPS_EVENTRT_OUTGOING,
+				_tps_eventrt_outgoing, &_tps_eventrt_outgoing_name)==1) {
+		return 0;
+	}
+
 	memset(&msg, 0, sizeof(sip_msg_t));
 	msg.buf = obuf->s;
 	msg.len = obuf->len;
@@ -355,7 +404,14 @@ int tps_msg_sent(void *data)
 		goto done;
 	}
 
+	if(tps_execute_event_route(&msg, evp, TPS_EVENTRT_SENDING,
+				_tps_eventrt_sending, &_tps_eventrt_sending_name)==1) {
+		goto done;
+	}
+
 	if(msg.first_line.type==SIP_REQUEST) {
+
+
 		dialog = (get_to(&msg)->tag_value.len>0)?1:0;
 
 		local = 0;
@@ -363,12 +419,20 @@ int tps_msg_sent(void *data)
 			local = 1;
 		}
 
+		if(local==1 && dialog==0) {
+			if((get_cseq(&msg)->method_id)
+						& (METHOD_OPTIONS|METHOD_NOTIFY|METHOD_KDMQ)) {
+				/* skip local out-of-dialog requests (e.g., keepalive, dmq) */
+				goto done;
+			}
+		}
+
 		tps_request_sent(&msg, dialog, local);
 	} else {
 		/* reply */
 		if(msg.first_line.u.reply.statuscode==100) {
 			/* nothing to do - it should be locally generated */
-			return 0;
+			goto done;
 		}
 		tps_response_sent(&msg);
 	}
@@ -399,6 +463,81 @@ int tps_get_branch_expire(void)
 /**
  *
  */
+static int tps_execute_event_route(sip_msg_t *msg, sr_event_param_t *evp,
+		int evtype, int evidx, str *evname)
+{
+	struct sip_msg *fmsg;
+	struct run_act_ctx ctx;
+	int rtb;
+	sr_kemi_eng_t *keng = NULL;
+	struct onsend_info onsnd_info = {0};
+
+	if(!(_tps_eventrt_mode & evtype)) {
+		return 0;
+	}
+
+	if(evidx<0) {
+		if(_tps_eventrt_callback.s!=NULL || _tps_eventrt_callback.len>0) {
+			keng = sr_kemi_eng_get();
+			if(keng==NULL) {
+				LM_DBG("event callback (%s) set, but no cfg engine\n",
+						_tps_eventrt_callback.s);
+				goto done;
+			}
+		}
+	}
+
+	if(evidx<0 && keng==NULL) {
+		return 0;
+	}
+
+	LM_DBG("executing event_route[topos:%.*s] (%d)\n", evname->len, evname->s,
+			evidx);
+	fmsg = faked_msg_next();
+
+	onsnd_info.to = &evp->dst->to;
+	onsnd_info.send_sock = evp->dst->send_sock;
+	if(msg!=NULL) {
+		onsnd_info.buf = msg->buf;
+		onsnd_info.len = msg->len;
+		onsnd_info.msg = msg;
+	} else {
+		onsnd_info.buf = fmsg->buf;
+		onsnd_info.len = fmsg->len;
+		onsnd_info.msg = fmsg;
+	}
+	p_onsend = &onsnd_info;
+
+	rtb = get_route_type();
+	set_route_type(REQUEST_ROUTE);
+	init_run_actions_ctx(&ctx);
+	if(evidx>=0) {
+		run_top_route(event_rt.rlist[evidx], (msg)?msg:fmsg, &ctx);
+	} else {
+		if(keng!=NULL) {
+			if(keng->froute((msg)?msg:fmsg, EVENT_ROUTE,
+						&_tps_eventrt_callback, evname)<0) {
+				LM_ERR("error running event route kemi callback\n");
+				p_onsend=NULL;
+				return -1;
+			}
+		}
+	}
+	set_route_type(rtb);
+	if(ctx.run_flags&DROP_R_F) {
+		LM_DBG("exit due to 'drop' in event route\n");
+		p_onsend=NULL;
+		return 1;
+	}
+
+done:
+	p_onsend=NULL;
+	return 0;
+}
+
+/**
+ *
+ */
 int bind_topos(topos_api_t *api)
 {
 	if (!api) {
@@ -412,3 +551,5 @@ int bind_topos(topos_api_t *api)
 
 	return 0;
 }
+
+/** @} */

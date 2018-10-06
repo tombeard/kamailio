@@ -28,8 +28,8 @@
  * \ingroup utils
  */
 
-/*! \defgroup Utils Kamailio :: Various utilities
- *
+/*! \defgroup utils Kamailio :: Various utilities
+ * @{
  */
 
 
@@ -44,6 +44,7 @@
 #include "../../core/resolve.h"
 #include "../../core/locking.h"
 #include "../../core/script_cb.h"
+#include "../../core/kemi.h"
 #include "../../core/mem/shm_mem.h"
 #include "../../lib/srdb1/db.h"
 
@@ -89,8 +90,8 @@ int utils_forward(struct sip_msg *msg, int id, int proto);
 
 /* Exported functions */
 static cmd_export_t cmds[] = {
-	{"xcap_auth_status", (cmd_function)xcap_auth_status, 2, fixup_pvar_pvar,
-		fixup_free_pvar_pvar, REQUEST_ROUTE},
+	{"xcap_auth_status", (cmd_function)w_xcap_auth_status, 2, fixup_spve_spve,
+		fixup_free_spve_spve, REQUEST_ROUTE},
 	{0, 0, 0, 0, 0, 0}
 };
 
@@ -115,18 +116,16 @@ static mi_export_t mi_cmds[] = {
 
 /* Module interface */
 struct module_exports exports = {
-	"utils",
+	"utils",         /* module name */
 	DEFAULT_DLFLAGS, /* dlopen flags */
-	cmds,      /* Exported functions */
-	params,    /* Exported parameters */
-	0,         /* exported statistics */
-	0,         /* exported MI functions */
-	0,         /* exported pseudo-variables */
-	0,         /* extra processes */
-	mod_init,  /* module initialization function */
-	0,         /* response function*/
-	destroy,   /* destroy function */
-	child_init /* per-child init function */
+	cmds,            /* exported functions */
+	params,          /* exported parameters */
+	0,               /* exported rpc functions */
+	0,               /* exported pseudo-variables */
+	0,               /* response handling function*/
+	mod_init,        /* module init function */
+	child_init,      /* per-child init function */
+	destroy          /* destroy function */
 };
 
 
@@ -322,6 +321,29 @@ int utils_forward(struct sip_msg *msg, int id, int proto)
 	return ret;
 }
 
+/**
+ *
+ */
+/* clang-format off */
+static sr_kemi_t sr_kemi_utils_exports[] = {
+	{ str_init("utils"), str_init("xcap_auth_status"),
+		SR_KEMIP_INT, ki_xcap_auth_status,
+		{ SR_KEMIP_STR, SR_KEMIP_STR, SR_KEMIP_NONE,
+			SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE }
+	},
+
+	{ {0, 0}, {0, 0}, 0, NULL, { 0, 0, 0, 0, 0, 0 } }
+};
+/* clang-format on */
+
+/**
+ *
+ */
+int mod_register(char *path, int *dlflags, void *p1, void *p2)
+{
+	sr_kemi_modules_add(sr_kemi_utils_exports);
+	return 0;
+}
 
 #ifdef MI_REMOVED
 /* FIFO functions */
@@ -447,3 +469,5 @@ static struct mi_root* forward_fifo_proxy(struct mi_root* cmd_tree, void* param)
 	return init_mi_tree(200, MI_OK_S, MI_OK_LEN);
 }
 #endif
+
+/** @} */

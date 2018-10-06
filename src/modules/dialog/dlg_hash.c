@@ -48,6 +48,12 @@ extern int dlg_ka_interval;
 
 extern int dlg_enable_dmq;
 
+extern int dlg_early_timeout;
+extern int dlg_noack_timeout;
+extern int dlg_end_timeout;
+extern int dlg_h_id_start;
+extern int dlg_h_id_step;
+
 /*! global dialog table */
 struct dlg_table *d_table = 0;
 
@@ -229,21 +235,24 @@ int dlg_clean_run(ticks_t ti)
 		while (dlg) {
 			tdlg = dlg;
 			dlg = dlg->next;
-			if(tdlg->state==DLG_STATE_UNCONFIRMED && tdlg->init_ts<tm-300) {
+			if(tdlg->state==DLG_STATE_UNCONFIRMED && tdlg->init_ts>0
+					&& tdlg->init_ts<tm-dlg_early_timeout) {
 				/* dialog in early state older than 5min */
 				LM_NOTICE("dialog in early state is too old (%p ref %d)\n",
 						tdlg, tdlg->ref);
 				unlink_unsafe_dlg(&d_table->entries[i], tdlg);
 				destroy_dlg(tdlg);
 			}
-			if(tdlg->state==DLG_STATE_CONFIRMED_NA && tdlg->start_ts<tm-60) {
+			if(tdlg->state==DLG_STATE_CONFIRMED_NA && tdlg->start_ts>0
+					&& tdlg->start_ts<tm-dlg_noack_timeout) {
 				if(update_dlg_timer(&tdlg->tl, 10)<0) {
 					LM_ERR("failed to update dialog lifetime in long non-ack state\n");
 				}
 				tdlg->lifetime = 10;
 				tdlg->dflags |= DLG_FLAG_CHANGED;
 			}
-			if(tdlg->state==DLG_STATE_DELETED && tdlg->end_ts<tm-300) {
+			if(tdlg->state==DLG_STATE_DELETED && tdlg->end_ts>0
+					&& tdlg->end_ts<tm-dlg_end_timeout) {
 				/* dialog in deleted state older than 5min */
 				LM_NOTICE("dialog in delete state is too old (%p ref %d)\n",
 						tdlg, tdlg->ref);
@@ -301,7 +310,12 @@ int init_dlg_table(unsigned int size)
 			LM_ERR("failed to init lock for slot: %d\n", i);
 			goto error1;
 		}
-		d_table->entries[i].next_id = kam_rand() % (3*size);
+		if(dlg_h_id_step>1) {
+			d_table->entries[i].next_id = dlg_h_id_start
+					+ (dlg_h_id_step * ((kam_rand() % (3*size)) + 1));
+		} else {
+			d_table->entries[i].next_id = kam_rand() % (3*size);
+		}
 	}
 
 	return 0;
@@ -787,6 +801,10 @@ struct dlg_cell* get_dlg( str *callid, str *ftag, str *ttag, unsigned int *dir)
 	struct dlg_cell *dlg;
 	unsigned int he;
 
+	if(d_table==NULL) {
+		LM_ERR("dialog hash table not available\n");
+		return 0;
+	}
 	he = core_hash(callid, 0, d_table->size);
 	dlg = internal_get_dlg(he, callid, ftag, ttag, dir, 0);
 
@@ -877,8 +895,17 @@ void link_dlg(struct dlg_cell *dlg, int n, int mode)
 	if(unlikely(mode==0)) dlg_lock( d_table, d_entry);
 
 	/* keep id 0 for special cases */
-	dlg->h_id = 1 + d_entry->next_id++;
-	if(dlg->h_id == 0) dlg->h_id = 1;
+	if(dlg_h_id_step>1) {
+		if((d_entry->next_id==0)
+				|| (d_entry->next_id + dlg_h_id_step < d_entry->next_id)) {
+			d_entry->next_id = dlg_h_id_start + dlg_h_id_step;
+		}
+		dlg->h_id = d_entry->next_id;
+		d_entry->next_id += dlg_h_id_step;
+	} else {
+		dlg->h_id = 1 + d_entry->next_id++;
+		if(dlg->h_id == 0) dlg->h_id = 1;
+	}
 	LM_DBG("linking dialog [%u:%u]\n", dlg->h_entry, dlg->h_id);
 	if (d_entry->first==0) {
 		d_entry->first = d_entry->last = dlg;
@@ -949,18 +976,19 @@ void dlg_release(dlg_cell_t *dlg)
 
 
 /*!
- * \brief Small logging helper functions for next_state_dlg.
+ * \brief Small logging helper macro for next_state_dlg.
  * \param event logged event
  * \param dlg dialog data
  * \see next_state_dlg
  */
-static inline void log_next_state_dlg(const int event, const struct dlg_cell *dlg) {
-	LM_CRIT("bogus event %d in state %d for dlg %p [%u:%u] with clid '%.*s' and tags "
-		"'%.*s' '%.*s'\n", event, dlg->state, dlg, dlg->h_entry, dlg->h_id,
-		dlg->callid.len, dlg->callid.s,
-		dlg->tag[DLG_CALLER_LEG].len, dlg->tag[DLG_CALLER_LEG].s,
-		dlg->tag[DLG_CALLEE_LEG].len, dlg->tag[DLG_CALLEE_LEG].s);
-}
+#define log_next_state_dlg(event, dlg) do { \
+		LM_CRIT("bogus event %d in state %d for dlg %p [%u:%u]" \
+			" with clid '%.*s' and tags" \
+			" '%.*s' '%.*s'\n", event, (dlg)->state, (dlg), \
+			(dlg)->h_entry, (dlg)->h_id, (dlg)->callid.len, (dlg)->callid.s, \
+			(dlg)->tag[DLG_CALLER_LEG].len, (dlg)->tag[DLG_CALLER_LEG].s, \
+			(dlg)->tag[DLG_CALLEE_LEG].len, (dlg)->tag[DLG_CALLEE_LEG].s); \
+	} while(0)
 
 
 /*!

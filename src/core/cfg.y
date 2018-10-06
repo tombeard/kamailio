@@ -138,7 +138,6 @@ static void yyerror(char* s, ...);
 static void yyerror_at(struct cfg_pos* pos, char* s, ...);
 static char* tmp;
 static int i_tmp;
-static unsigned u_tmp;
 static struct socket_id* lst_tmp;
 static struct name_lst*  nl_tmp;
 static int rt;  /* Type of route block for find_export */
@@ -324,6 +323,8 @@ extern char *default_routename;
 %token LOGPREFIXMODE
 %token LOGENGINETYPE
 %token LOGENGINEDATA
+%token XAVPVIAPARAMS
+%token XAVPVIAFIELDS
 %token LISTEN
 %token ADVERTISE
 %token ALIAS
@@ -368,6 +369,7 @@ extern char *default_routename;
 %token DST_BLST_TCP_IMASK
 %token DST_BLST_TLS_IMASK
 %token DST_BLST_SCTP_IMASK
+%token IP_FREE_BIND
 
 %token PORT
 %token STAT
@@ -375,6 +377,7 @@ extern char *default_routename;
 %token SOCKET_WORKERS
 %token ASYNC_WORKERS
 %token ASYNC_USLEEP
+%token ASYNC_NONBLOCK
 %token CHECK_VIA
 %token PHONE2TEL
 %token MEMLOG
@@ -429,7 +432,9 @@ extern char *default_routename;
 %token TCP_OPT_KEEPCNT
 %token TCP_OPT_CRLF_PING
 %token TCP_OPT_ACCEPT_NO_CL
+%token TCP_OPT_ACCEPT_HEP3
 %token TCP_CLONE_RCVBUF
+%token TCP_REUSE_PORT
 %token DISABLE_TLS
 %token ENABLE_TLS
 %token TLSLOG
@@ -472,10 +477,18 @@ extern char *default_routename;
 %token MAX_WLOOPS
 %token PVBUFSIZE
 %token PVBUFSLOTS
+%token PVCACHELIMIT
+%token PVCACHEACTION
 %token HTTP_REPLY_PARSE
 %token VERSION_TABLE_CFG
+%token VERBOSE_STARTUP
+%token ROUTE_LOCKS_SIZE
 %token CFG_DESCRIPTION
 %token SERVER_ID
+%token KEMI
+%token ONSEND_ROUTE_CALLBACK
+%token REPLY_ROUTE_CALLBACK
+%token EVENT_ROUTE_CALLBACK
 %token MAX_RECURSIVE_LEVEL
 %token MAX_BRANCHES_PARAM
 %token LATENCY_CFG_LOG
@@ -592,6 +605,7 @@ extern char *default_routename;
 %type <intval> avpflag_oper
 %type <intval> rve_un_op
 %type <strval> cfg_var_id
+%type <strval> cfg_var_idn
 /* %type <intval> rve_op */
 
 /*%type <route_el> rules;
@@ -785,6 +799,14 @@ assign_stm:
 	| LOGENGINETYPE EQUAL error { yyerror("string value expected"); }
 	| LOGENGINEDATA EQUAL STRING { _km_log_engine_data=$3; }
 	| LOGENGINEDATA EQUAL error { yyerror("string value expected"); }
+	| XAVPVIAPARAMS EQUAL STRING { _ksr_xavp_via_params.s=$3;
+			_ksr_xavp_via_params.len=strlen($3);
+		}
+	| XAVPVIAPARAMS EQUAL error { yyerror("string value expected"); }
+	| XAVPVIAFIELDS EQUAL STRING { _ksr_xavp_via_params.s=$3;
+			_ksr_xavp_via_fields.len=strlen($3);
+		}
+	| XAVPVIAFIELDS EQUAL error { yyerror("string value expected"); }
 	| DNS EQUAL NUMBER   { received_dns|= ($3)?DO_DNS:0; }
 	| DNS EQUAL error { yyerror("boolean value expected"); }
 	| REV_DNS EQUAL NUMBER { received_dns|= ($3)?DO_REV_DNS:0; }
@@ -872,6 +894,8 @@ assign_stm:
 		IF_DST_BLACKLIST(default_core_cfg.blst_sctp_imask=$3);
 	}
 	| DST_BLST_SCTP_IMASK error { yyerror("number(flags) expected"); }
+	| IP_FREE_BIND EQUAL intno { _sr_ip_free_bind=$3; }
+	| IP_FREE_BIND EQUAL error { yyerror("int value expected"); }
 	| PORT EQUAL NUMBER   { port_no=$3; }
 	| STAT EQUAL STRING {
 		#ifdef STATS
@@ -891,6 +915,8 @@ assign_stm:
 	| ASYNC_WORKERS EQUAL error { yyerror("number expected"); }
 	| ASYNC_USLEEP EQUAL NUMBER { async_task_set_usleep($3); }
 	| ASYNC_USLEEP EQUAL error { yyerror("number expected"); }
+	| ASYNC_NONBLOCK EQUAL NUMBER { async_task_set_nonblock($3); }
+	| ASYNC_NONBLOCK EQUAL error { yyerror("number expected"); }
 	| CHECK_VIA EQUAL NUMBER { check_via=$3; }
 	| CHECK_VIA EQUAL error { yyerror("boolean value expected"); }
 	| PHONE2TEL EQUAL NUMBER { phone2tel=$3; }
@@ -1196,6 +1222,15 @@ assign_stm:
 		#endif
 	}
 	| TCP_OPT_ACCEPT_NO_CL EQUAL error { yyerror("boolean value expected"); }
+	| TCP_OPT_ACCEPT_HEP3 EQUAL NUMBER {
+		#ifdef USE_TCP
+			ksr_tcp_accept_hep3=$3;
+		#else
+			warn("tcp support not compiled in");
+		#endif
+	}
+	| TCP_OPT_ACCEPT_HEP3 EQUAL error { yyerror("boolean value expected"); }
+
 	| TCP_CLONE_RCVBUF EQUAL NUMBER {
 		#ifdef USE_TCP
 			tcp_set_clone_rcvbuf($3);
@@ -1204,6 +1239,18 @@ assign_stm:
 		#endif
 	}
 	| TCP_CLONE_RCVBUF EQUAL error { yyerror("number expected"); }
+	| TCP_REUSE_PORT EQUAL NUMBER {
+		#ifdef USE_TCP
+		#ifdef SO_REUSEPORT
+			tcp_default_cfg.reuse_port=$3;
+		#else
+			warn("support for SO_REUSEPORT not compiled in");
+		#endif
+		#else
+			warn("tcp support not compiled in");
+		#endif
+	}
+	| TCP_REUSE_PORT EQUAL error { yyerror("boolean value expected"); }
 	| DISABLE_TLS EQUAL NUMBER {
 		#ifdef USE_TLS
 			tls_disable=$3;
@@ -1528,9 +1575,48 @@ assign_stm:
 	| PVBUFSIZE EQUAL error { yyerror("number expected"); }
 	| PVBUFSLOTS EQUAL NUMBER { pv_set_buffer_slots($3); }
 	| PVBUFSLOTS EQUAL error { yyerror("number expected"); }
+	| PVCACHELIMIT EQUAL NUMBER { default_core_cfg.pv_cache_limit=$3; }
+	| PVCACHELIMIT EQUAL error { yyerror("number expected"); }
+	| PVCACHEACTION EQUAL NUMBER { default_core_cfg.pv_cache_action=$3; }
+	| PVCACHEACTION EQUAL error { yyerror("number expected"); }
 	| HTTP_REPLY_PARSE EQUAL NUMBER { http_reply_parse=$3; }
 	| HTTP_REPLY_PARSE EQUAL error { yyerror("boolean value expected"); }
+	| VERBOSE_STARTUP EQUAL NUMBER { ksr_verbose_startup=$3; }
+	| VERBOSE_STARTUP EQUAL error { yyerror("boolean value expected"); }
+	| ROUTE_LOCKS_SIZE EQUAL NUMBER { ksr_route_locks_size=$3; }
+	| ROUTE_LOCKS_SIZE EQUAL error { yyerror("number expected"); }
     | SERVER_ID EQUAL NUMBER { server_id=$3; }
+	| SERVER_ID EQUAL error  { yyerror("number expected"); }
+	| KEMI DOT ONSEND_ROUTE_CALLBACK EQUAL STRING {
+			kemi_onsend_route_callback.s = $5;
+			kemi_onsend_route_callback.len = strlen($5);
+			if(kemi_onsend_route_callback.len==4
+					&& strcasecmp(kemi_onsend_route_callback.s, "none")==0) {
+				kemi_onsend_route_callback.s = "";
+				kemi_onsend_route_callback.len = 0;
+			}
+		}
+	| KEMI DOT ONSEND_ROUTE_CALLBACK EQUAL error { yyerror("string expected"); }
+	| KEMI DOT REPLY_ROUTE_CALLBACK EQUAL STRING {
+			kemi_reply_route_callback.s = $5;
+			kemi_reply_route_callback.len = strlen($5);
+			if(kemi_reply_route_callback.len==4
+					&& strcasecmp(kemi_reply_route_callback.s, "none")==0) {
+				kemi_reply_route_callback.s = "";
+				kemi_reply_route_callback.len = 0;
+			}
+		}
+	| KEMI DOT REPLY_ROUTE_CALLBACK EQUAL error { yyerror("string expected"); }
+	| KEMI DOT EVENT_ROUTE_CALLBACK EQUAL STRING {
+			kemi_event_route_callback.s = $5;
+			kemi_event_route_callback.len = strlen($5);
+			if(kemi_event_route_callback.len==4
+					&& strcasecmp(kemi_event_route_callback.s, "none")==0) {
+				kemi_event_route_callback.s = "";
+				kemi_event_route_callback.len = 0;
+			}
+		}
+	| KEMI DOT EVENT_ROUTE_CALLBACK EQUAL error { yyerror("string expected"); }
     | MAX_RECURSIVE_LEVEL EQUAL NUMBER { set_max_recursive_level($3); }
     | MAX_BRANCHES_PARAM EQUAL NUMBER { sr_dst_max_branches = $3; }
     | LATENCY_LOG EQUAL intno { default_core_cfg.latency_log=$3; }
@@ -1572,36 +1658,45 @@ cfg_var_id: ID
 	| DEFAULT { $$="default" ; } /*needed to allow default as cfg var. name*/
 	;
 
+cfg_var_idn: ID
+	| DEFAULT { $$="default" ; } /*needed to allow default as cfg var. name*/
+	| NUMBER {
+		yyerror("cfg var field name - use of number or reserved token not allowed: %s",
+				yy_number_str);
+		YYERROR;
+	}
+	;
+
 cfg_var:
-	cfg_var_id DOT cfg_var_id EQUAL NUMBER {
+	cfg_var_id DOT cfg_var_idn EQUAL NUMBER {
 		if (cfg_declare_int($1, $3, $5, 0, 0, NULL)) {
 			yyerror("variable cannot be declared");
 		}
 	}
-	| cfg_var_id DOT cfg_var_id EQUAL STRING {
+	| cfg_var_id DOT cfg_var_idn EQUAL STRING {
 		if (cfg_declare_str($1, $3, $5, NULL)) {
 			yyerror("variable cannot be declared");
 		}
 	}
-	| cfg_var_id DOT cfg_var_id EQUAL NUMBER CFG_DESCRIPTION STRING {
+	| cfg_var_id DOT cfg_var_idn EQUAL NUMBER CFG_DESCRIPTION STRING {
 		if (cfg_declare_int($1, $3, $5, 0, 0, $7)) {
 			yyerror("variable cannot be declared");
 		}
 	}
-	| cfg_var_id DOT cfg_var_id EQUAL STRING CFG_DESCRIPTION STRING {
+	| cfg_var_id DOT cfg_var_idn EQUAL STRING CFG_DESCRIPTION STRING {
 		if (cfg_declare_str($1, $3, $5, $7)) {
 			yyerror("variable cannot be declared");
 		}
 	}
-	| cfg_var_id DOT cfg_var_id EQUAL error {
+	| cfg_var_id DOT cfg_var_idn EQUAL error {
 		yyerror("number or string expected");
 	}
-	| cfg_var_id LBRACK NUMBER RBRACK DOT cfg_var_id EQUAL NUMBER {
+	| cfg_var_id LBRACK NUMBER RBRACK DOT cfg_var_idn EQUAL NUMBER {
 		if (cfg_ginst_var_int($1, $3, $6, $8)) {
 			yyerror("variable cannot be added to the group instance");
 		}
 	}
-	| cfg_var_id LBRACK NUMBER RBRACK DOT cfg_var_id EQUAL STRING {
+	| cfg_var_id LBRACK NUMBER RBRACK DOT cfg_var_idn EQUAL STRING {
 		if (cfg_ginst_var_string($1, $3, $6, $8)) {
 			yyerror("variable cannot be added to the group instance");
 		}
@@ -2363,7 +2458,7 @@ single_case:
 		}
 	}
 	| DEFAULT COLON actions {
-		if ((($$=mk_case_stm(0, 0, $3, &i_tmp))==0) && (i_tmp=-10)){
+		if ((($$=mk_case_stm(0, 0, $3, &i_tmp))==0) && (i_tmp==-10)){
 				YYABORT;
 		}
 	}
@@ -3252,11 +3347,9 @@ cmd:
 	| ID {mod_func_action = mk_action(MODULE0_T, 2, MODEXP_ST, NULL, NUMBER_ST,
 			0); } LPAREN func_params RPAREN	{
 		mod_func_action->val[0].u.data =
-			find_export_record($1, mod_func_action->val[1].u.number, rt,
-								&u_tmp);
+			find_export_record($1, mod_func_action->val[1].u.number, rt);
 		if (mod_func_action->val[0].u.data == 0) {
-			if (find_export_record($1, mod_func_action->val[1].u.number, 0,
-									&u_tmp) ) {
+			if (find_export_record($1, mod_func_action->val[1].u.number, 0) ) {
 					LM_ERR("misused command %s\n", $1);
 					yyerror("Command cannot be used in the block\n");
 			} else {
@@ -3753,7 +3846,7 @@ static int case_check_default(struct case_stms* stms)
  */
 static int mod_f_params_pre_fixup(struct action* a)
 {
-	sr31_cmd_export_t* cmd_exp;
+	ksr_cmd_export_t* cmd_exp;
 	action_u_t* params;
 	int param_no;
 	struct rval_expr* rve;

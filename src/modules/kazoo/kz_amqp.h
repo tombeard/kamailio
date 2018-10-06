@@ -166,24 +166,58 @@ typedef struct {
 	char* event_key;
 	char* event_subkey;
 	str* message_id;
+	str* routing_key;
 	kz_amqp_cmd_ptr cmd;
 } kz_amqp_consumer_delivery, *kz_amqp_consumer_delivery_ptr;
 
 typedef struct {
-	amqp_bytes_t exchange;
-	amqp_bytes_t exchange_type;
-	amqp_bytes_t routing_key;
-	amqp_bytes_t queue;
-	amqp_bytes_t event_key;
-	amqp_bytes_t event_subkey;
+	amqp_bytes_t name;
+	amqp_bytes_t type;
+	amqp_boolean_t passive;
+	amqp_boolean_t durable;
+	amqp_boolean_t auto_delete;
+	amqp_boolean_t internal;
+} kz_amqp_exchange, *kz_amqp_exchange_ptr;
+
+typedef struct {
+	amqp_bytes_t name;
 	amqp_boolean_t passive;
 	amqp_boolean_t durable;
 	amqp_boolean_t exclusive;
 	amqp_boolean_t auto_delete;
+} kz_amqp_queue, *kz_amqp_queue_ptr;
+
+typedef struct kz_amqp_routings_t {
+	amqp_bytes_t routing;
+	struct kz_amqp_routings_t* next;
+} kz_amqp_routings, *kz_amqp_routings_ptr;
+
+typedef struct kz_amqp_exchange_binding_t {
+	kz_amqp_exchange_ptr from_exchange;
+	kz_amqp_routings_ptr routing;
+	struct kz_amqp_exchange_binding_t* next;
+} kz_amqp_exchange_binding, *kz_amqp_exchange_binding_ptr;
+
+typedef struct {
+//	amqp_bytes_t exchange;
+//	amqp_bytes_t exchange_type;
+	kz_amqp_exchange_ptr exchange;
+	kz_amqp_exchange_binding_ptr exchange_bindings;
+	kz_amqp_queue_ptr queue;
+	kz_amqp_routings_ptr queue_bindings;
+//	amqp_bytes_t routing_key;
+//	amqp_bytes_t queue;
+	amqp_bytes_t event_key;
+	amqp_bytes_t event_subkey;
+//	amqp_boolean_t passive;
+//	amqp_boolean_t durable;
+//	amqp_boolean_t exclusive;
+//	amqp_boolean_t auto_delete;
 	amqp_boolean_t no_ack;
 	amqp_boolean_t wait_for_consumer_ack;
 	amqp_boolean_t federate;
     amqp_boolean_t consistent_worker;
+    str* consistent_worker_key;
 } kz_amqp_bind, *kz_amqp_bind_ptr;
 
 typedef struct {
@@ -259,6 +293,7 @@ int kz_amqp_consumer_worker_proc(int cmd_pipe);
 int kz_amqp_handle_server_failure(kz_amqp_conn_ptr connection);
 
 int kz_pv_get_event_payload(struct sip_msg *msg, pv_param_t *param,	pv_value_t *res);
+int kz_pv_get_event_routing_key(struct sip_msg *msg, pv_param_t *param,	pv_value_t *res);
 int kz_pv_get_last_query_result(struct sip_msg *msg, pv_param_t *param,	pv_value_t *res);
 int kz_pv_get_connection_host(struct sip_msg *msg, pv_param_t *param,	pv_value_t *res);
 
@@ -272,13 +307,21 @@ kz_amqp_zone_ptr kz_amqp_get_zones();
 kz_amqp_zone_ptr kz_amqp_get_zone(char* zone);
 kz_amqp_zone_ptr kz_amqp_add_zone(char* zone);
 
-void kz_amqp_fire_connection_event(char *event, char* host);
+void kz_amqp_fire_connection_event(char *event, char* host, char* zone);
 
 void kz_amqp_free_pipe_cmd(kz_amqp_cmd_ptr cmd);
 
 void kz_amqp_timer_destroy(kz_amqp_timer_ptr* pTimer);
 int kz_amqp_timer_create(kz_amqp_timer_ptr* pTimer, int seconds, void (*callback)(int, short, void *), void *data);
 void kz_amqp_heartbeat_proc(int fd, short event, void *arg);
+
+void kz_amqp_queue_free(kz_amqp_queue_ptr exchange);
+void kz_amqp_exchange_free(kz_amqp_exchange_ptr exchange);
+void kz_amqp_exchange_bindings_free(kz_amqp_exchange_binding_ptr binding);
+void kz_amqp_routing_free(kz_amqp_routings_ptr routing);
+kz_amqp_queue_ptr kz_amqp_queue_new(str *name);
+kz_amqp_exchange_ptr kz_amqp_exchange_new(str *name, str* type);
+kz_amqp_routings_ptr kz_amqp_routing_new(char* routing);
 
 static inline int kz_amqp_error(char const *context, amqp_rpc_reply_t x)
 {
@@ -325,3 +368,4 @@ static inline int kz_amqp_error(char const *context, amqp_rpc_reply_t x)
 
 
 #endif /* KZ_AMQP_H_ */
+

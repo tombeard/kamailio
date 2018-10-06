@@ -41,6 +41,7 @@
 #include "../../core/parser/parse_from.h"
 #include "../../core/parser/parse_content.h"
 #include "../../core/parser/parse_disposition.h"
+#include "../../core/cfg/cfg_struct.h"
 #include "../../lib/srdb1/db.h"
 #include "../../modules/sl/sl.h"
 #include "cpl_run.h"
@@ -62,6 +63,7 @@ static str db_table        = str_init("cpl");  /* database table */
 static char *dtd_file      = 0;  /* name of the DTD file for CPL parser */
 static char *lookup_domain = 0;
 static str  timer_avp      = STR_NULL;  /* name of variable timer AVP */
+static str  proxy_route    = STR_NULL;
 
 
 struct cpl_enviroment    cpl_env = {
@@ -95,18 +97,8 @@ static int fixup_cpl_run_script(void** param, int param_no);
 static int fixup_cpl_run_script3(void** param, int param_no);
 static int cpl_init(void);
 static int cpl_child_init(int rank);
-static int cpl_exit(void);
+static void cpl_exit(void);
 static void cpl_process(int rank);
-
-
-/*
- * Exported processes
- */
-static proc_export_t cpl_procs[] = {
-	{"CPL Aux",  0,  0,  cpl_process, 1 },
-	{0,0,0,0,0}
-};
-
 
 /*
  * Exported functions
@@ -114,7 +106,7 @@ static proc_export_t cpl_procs[] = {
 static cmd_export_t cmds[] = {
 	{"cpl_run_script",            (cmd_function)cpl_invoke_script,        2,
 			fixup_cpl_run_script, 0, REQUEST_ROUTE},
-	{"cpl_run_script",            (cmd_function)cpl_invoke_script3,        3,
+	{"cpl_run_script",            (cmd_function)cpl_invoke_script3,       3,
 			fixup_cpl_run_script3, 0, REQUEST_ROUTE},
 	{"cpl_process_register",      (cmd_function)w_process_register,       0,
 			0, 0,                    REQUEST_ROUTE},
@@ -132,7 +124,7 @@ static param_export_t params[] = {
 	{"db_table",       PARAM_STR, &db_table                        },
 	{"cpl_dtd_file",   PARAM_STRING, &dtd_file                          },
 	{"proxy_recurse",  INT_PARAM, &cpl_env.proxy_recurse             },
-	{"proxy_route",    INT_PARAM, &cpl_env.proxy_route               },
+	{"proxy_route",    PARAM_STR, &proxy_route                     },
 	{"log_dir",        PARAM_STRING, &cpl_env.log_dir                   },
 	{"case_sensitive", INT_PARAM, &cpl_env.case_sensitive            },
 	{"realm_prefix",   PARAM_STR, &cpl_env.realm_prefix            },
@@ -151,16 +143,14 @@ static param_export_t params[] = {
 struct module_exports exports = {
 	"cplc",
 	DEFAULT_DLFLAGS, /* dlopen flags */
-	cmds,     /* Exported functions */
-	params,   /* Exported parameters */
-	0,        /* exported statistics */
-	0,        /* exported MI functions */
-	0,        /* exported pseudo-variables */
-	cpl_procs,/* extra processes */
-	cpl_init, /* Module initialization function */
-	0,
-	(destroy_function) cpl_exit,
-	(child_init_function) cpl_child_init /* per-child init function */
+	cmds,            /* exported functions */
+	params,          /* exported parameters */
+	0,               /* exported rpc functions */
+	0,               /* exported pseudo-variables */
+	0,               /* response handling function */
+	cpl_init,        /* module init function */
+	cpl_child_init,  /* child init function */
+	cpl_exit         /* module destroy function */
 };
 
 
@@ -202,7 +192,7 @@ static int fixup_cpl_run_script3(void** param, int param_no)
 {
 	if (param_no==1 || param_no==2) {
 		return fixup_cpl_run_script(param, param_no);
-	} else if (param_no==2) {
+	} else if (param_no==3) {
 		return fixup_spve_null(param, 1);
 	}
 	return 0;
@@ -230,6 +220,14 @@ static int cpl_init(void)
 			"the maximum safety value (%d)\n",
 			cpl_env.proxy_recurse,MAX_PROXY_RECURSE);
 		goto error;
+	}
+
+	if (proxy_route.len>0) {
+		cpl_env.proxy_route=route_lookup(&main_rt, proxy_route.s);
+		if (cpl_env.proxy_route==-1) {
+			LM_CRIT("route <%s> defined in proxy_route does not exist\n",proxy_route.s);
+			goto error;
+		}
 	}
 
 	/* fix the timer_avp name */
@@ -370,6 +368,11 @@ static int cpl_init(void)
 		strlower( &cpl_env.realm_prefix );
 	}
 
+	/* add space for one extra process */
+	register_procs(1);
+	/* add child to update local config framework structures */
+	cfg_register_child(1);
+
 	return 0;
 error:
 	return -1;
@@ -379,6 +382,22 @@ error:
 
 static int cpl_child_init(int rank)
 {
+	int pid;
+
+	if (rank==PROC_MAIN) {
+		pid=fork_process(PROC_RPC, "CPL Aux", 1);
+		if (pid<0)
+			return -1; /* error */
+		if(pid==0){
+			/* child */
+			/* initialize the config framework */
+			if (cfg_child_init())
+				return -1;
+
+			cpl_process(1);
+		}
+	}
+
 	if (rank==PROC_INIT || rank==PROC_MAIN || rank==PROC_TCP_MAIN)
 		return 0; /* do nothing for the main process */
 
@@ -394,13 +413,11 @@ static void cpl_process(int rank)
 }
 
 
-static int cpl_exit(void)
+static void cpl_exit(void)
 {
 	/* free the TZ orig */
 	if (cpl_env.orig_tz.s)
 		shm_free(cpl_env.orig_tz.s);
-
-	return 0;
 }
 
 

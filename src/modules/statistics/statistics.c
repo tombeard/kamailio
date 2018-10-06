@@ -39,6 +39,7 @@
 #include "../../core/dprint.h"
 #include "../../core/ut.h"
 #include "../../core/mod_fix.h"
+#include "../../core/kemi.h"
 #include "../../core/counters.h"
 #include "../../core/mem/mem.h"
 #include "stats_funcs.h"
@@ -78,18 +79,16 @@ static param_export_t mod_params[]={
 
 
 struct module_exports exports= {
-	"statistics", /* module's name */
+	"statistics", /* module name */
 	DEFAULT_DLFLAGS, /* dlopen flags */
 	cmds,         /* exported functions */
-	mod_params,   /* param exports */
-	0,            /* exported statistics */
-	0,            /* exported MI functions */
+	mod_params,   /* exported parameters */
+	0,            /* exported rpc functions */
 	0,            /* exported pseudo-variables */
-	0,            /* extra processes */
-	mod_init,     /* module initialization function */
 	0,            /* reply processing function */
-	0,            /* module destroy function */
-	0             /* per-child init function */
+	mod_init,     /* module init function */
+	0,            /* per-child init function */
+	0             /* module destroy function */
 };
 
 
@@ -134,6 +133,7 @@ static int fixup_stat(void** param, int param_no)
 		if (s.s[0]=='$') {
 			if (fixup_pvar_null(param, 1)!=0) {
 				LM_ERR("invalid pv %s as parameter\n",s.s);
+				pkg_free(sopv);
 				return E_CFG;
 			}
 			sopv->pv = (pv_spec_t*)(*param);
@@ -142,10 +142,10 @@ static int fixup_stat(void** param, int param_no)
 			sopv->stat = get_stat( &s );
 			if (sopv->stat==0) {
 				LM_ERR("variable <%s> not defined\n", s.s);
+				pkg_free(sopv);
 				return E_CFG;
 			}
 		}
-		pkg_free(s.s);
 		*param=(void*)sopv;
 		return 0;
 	} else if (param_no==2) {
@@ -159,6 +159,7 @@ static int fixup_stat(void** param, int param_no)
 		if (s.s[0] == '$') {
 			if (fixup_pvar_pvar(param, 2) != 0) {
 				LM_ERR("invalid pv %s as parameter\n",s.s);
+				pkg_free(lopv);
 				return E_CFG;
 			}
 			lopv->pv = (pv_spec_t*) (*param);
@@ -178,13 +179,14 @@ static int fixup_stat(void** param, int param_no)
 		if (err==0){
 			if (n==0 && (s.s[0]!='$')) {	//we can't check the value of the pvar so have to ignore this check if it is a pvar
 				LM_ERR("update with 0 has no sense\n");
+				pkg_free(lopv);
 				return E_CFG;
 			}
-			pkg_free(s.s);
 			*param=(void*)lopv;
 			return 0;
 		}else{
 			LM_ERR("bad update number <%s>\n",(char*)(*param));
+			pkg_free(lopv);
 			return E_CFG;
 		}
 	}
@@ -240,6 +242,18 @@ static int w_update_stat(struct sip_msg *msg, char *stat_p, char *long_p)
 	return 1;
 }
 
+static int ki_update_stat(sip_msg_t *msg, str *sname, int sval)
+{
+	stat_var *stat;
+
+	stat = get_stat(sname);
+	if(stat == 0) {
+		LM_ERR("variable <%.*s> not defined\n", sname->len, sname->s);
+		return -1;
+	}
+	update_stat(stat, (long)sval);
+	return 1;
+}
 
 static int w_reset_stat(struct sip_msg *msg, char* stat_p, char *foo)
 {
@@ -264,8 +278,47 @@ static int w_reset_stat(struct sip_msg *msg, char* stat_p, char *foo)
 		reset_stat( stat );
 	}
 
-
 	return 1;
 }
 
+static int ki_reset_stat(sip_msg_t *msg, str* sname)
+{
+	stat_var *stat;
 
+	stat = get_stat(sname);
+	if(stat == 0) {
+		LM_ERR("variable <%.*s> not defined\n", sname->len, sname->s);
+		return -1;
+	}
+	reset_stat( stat );
+	return 1;
+}
+
+/**
+ *
+ */
+/* clang-format off */
+static sr_kemi_t sr_kemi_statistics_exports[] = {
+	{ str_init("statistics"), str_init("update_stat"),
+		SR_KEMIP_INT, ki_update_stat,
+		{ SR_KEMIP_STR, SR_KEMIP_INT, SR_KEMIP_NONE,
+			SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE }
+	},
+	{ str_init("statistics"), str_init("reset_stat"),
+		SR_KEMIP_INT, ki_reset_stat,
+		{ SR_KEMIP_STR, SR_KEMIP_NONE, SR_KEMIP_NONE,
+			SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE }
+	},
+
+	{ {0, 0}, {0, 0}, 0, NULL, { 0, 0, 0, 0, 0, 0 } }
+};
+/* clang-format on */
+
+/**
+ *
+ */
+int mod_register(char *path, int *dlflags, void *p1, void *p2)
+{
+	sr_kemi_modules_add(sr_kemi_statistics_exports);
+	return 0;
+}

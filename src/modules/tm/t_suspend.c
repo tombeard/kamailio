@@ -23,6 +23,7 @@
 #include "../../core/script_cb.h"
 #include "../../core/dset.h"
 #include "../../core/cfg/cfg_struct.h"
+#include "../../core/kemi.h"
 
 #include "config.h"
 #include "sip_msg.h"
@@ -119,8 +120,7 @@ int t_suspend(struct sip_msg *msg,
 		/* this is a reply suspend find which branch */
 
 		if (t_check( msg  , &branch )==-1){
-			LOG(L_ERR, "ERROR: t_suspend_reply: " \
-				"failed find UAC branch\n");
+			LM_ERR("failed find UAC branch\n");
 			return -1;
 		}
 		LM_DBG("found a a match with branch id [%d] - "
@@ -130,7 +130,7 @@ int t_suspend(struct sip_msg *msg,
 		t->uac[branch].reply = sip_msg_cloner( msg, &sip_msg_len );
 
 		if (! t->uac[branch].reply ) {
-			LOG(L_ERR, "can't alloc' clone memory\n");
+			LM_ERR("can't alloc' clone memory\n");
 			return -1;
 		}
 		t->uac[branch].end_reply = ((char*)t->uac[branch].reply) + sip_msg_len;
@@ -163,11 +163,15 @@ int t_suspend(struct sip_msg *msg,
  * 	0  - success
  * 	<0 - failure
  */
-int t_continue(unsigned int hash_index, unsigned int label,
-		struct action *route)
+int t_continue_helper(unsigned int hash_index, unsigned int label,
+		struct action *rtact, str *cbname, str *cbparam)
 {
-	struct cell	*t;
-	struct sip_msg *faked_req;
+	tm_cell_t *t;
+	tm_cell_t *backup_T = T_UNDEFINED;
+	int backup_T_branch = T_BR_UNDEFINED;
+	sip_msg_t *faked_req;
+	sip_msg_t *brpl;
+	void *erpl;
 	int faked_req_len = 0;
 	struct cancel_info cancel_data;
 	int	branch;
@@ -180,16 +184,23 @@ int t_continue(unsigned int hash_index, unsigned int label,
 	int do_put_on_wait;
 	struct hdr_field *hdr, *prev = 0, *tmp = 0;
 	int route_type_bk;
+	sr_kemi_eng_t *keng = NULL;
+	str evname = str_init("tm:continue");
 
 	cfg_update();
 
+	backup_T = get_t();
+	backup_T_branch = get_t_branch();
+
 	if (t_lookup_ident(&t, hash_index, label) < 0) {
+		set_t(backup_T, backup_T_branch);
 		LM_ERR("transaction not found\n");
 		return -1;
 	}
 
 	if (!(t->flags & T_ASYNC_SUSPENDED)) {
 		LM_WARN("transaction is not suspended [%u:%u]\n", hash_index, label);
+		set_t(backup_T, backup_T_branch);
 		return -2;
 	}
 
@@ -199,7 +210,7 @@ int t_continue(unsigned int hash_index, unsigned int label,
 		 * needless to continue */
 		UNREF(t); /* t_unref would kill the transaction */
 		/* reset T as we have no working T anymore */
-		set_t(T_UNDEFINED, T_BR_UNDEFINED);
+		set_t(backup_T, backup_T_branch);
 		return 1;
 	}
 
@@ -241,8 +252,10 @@ int t_continue(unsigned int hash_index, unsigned int label,
 				/* Either t_continue() has already been
 				* called or the branch has already timed out.
 				* Needless to continue. */
+				t->flags &= ~T_ASYNC_CONTINUE;
 				UNLOCK_ASYNC_CONTINUE(t);
 				UNREF(t); /* t_unref would kill the transaction */
+				set_t(backup_T, backup_T_branch);
 				return 1;
 			}
 
@@ -255,6 +268,14 @@ int t_continue(unsigned int hash_index, unsigned int label,
 			 * a failure route => deadlock, because both
 			 * of them need the reply lock to be held. */
 			t->uac[branch].last_received=500;
+			if(t->uac[branch].reply!=NULL) {
+				LM_WARN("reply (%p) already set for suspended transaction"
+						" (branch: %d)\n",
+						t->uac[branch].reply, branch);
+			} else {
+				/* set it as a faked reply */
+				t->uac[branch].reply=FAKED_REPLY;
+			}
 			uac = &t->uac[branch];
 		}
 		/* else
@@ -282,8 +303,30 @@ int t_continue(unsigned int hash_index, unsigned int label,
 		set_route_type(FAILURE_ROUTE);
 		/* execute the pre/post -script callbacks based on original route block */
 		if (exec_pre_script_cb(faked_req, cb_type)>0) {
-			if (run_top_route(route, faked_req, 0)<0)
-				LM_ERR("failure inside run_top_route\n");
+			if(rtact!=NULL) {
+				if (run_top_route(rtact, faked_req, 0)<0) {
+					LM_ERR("failure inside run_top_route\n");
+				}
+			} else {
+				if(cbname!=NULL && cbname->s!=NULL) {
+					keng = sr_kemi_eng_get();
+					if(keng!=NULL) {
+						if(cbparam && cbparam->s) {
+							evname = *cbparam;
+						}
+						if(keng->froute(faked_req, FAILURE_ROUTE, cbname,
+								&evname)<0) {
+							LM_ERR("error running event route kemi callback\n");
+							return -1;
+						}
+					} else {
+						LM_DBG("event callback (%.*s) set, but no cfg engine\n",
+								cbname->len, cbname->s);
+					}
+				} else {
+					LM_WARN("no continue callback\n");
+				}
+			}
 			exec_post_script_cb(faked_req, cb_type);
 		}
 		set_route_type(route_type_bk);
@@ -312,7 +355,7 @@ int t_continue(unsigned int hash_index, unsigned int label,
 
 			if (branch == t->nr_of_outgoings) {
 			/* There is not any open branch so there is
-			* no chance that a final response will be received. */
+			 * no chance that a final response will be received. */
 				ret = 0;
 				goto kill_trans;
 			}
@@ -338,8 +381,28 @@ int t_continue(unsigned int hash_index, unsigned int label,
 		faked_env( t, t->uac[branch].reply, 1);
 
 		if (exec_pre_script_cb(t->uac[branch].reply, cb_type)>0) {
-			if (run_top_route(route, t->uac[branch].reply, 0)<0){
-				LOG(L_ERR, "ERROR: t_continue_reply: Error in run_top_route\n");
+			if(rtact!=NULL) {
+				if (run_top_route(rtact, t->uac[branch].reply, 0)<0){
+					LM_ERR("Error in run_top_route\n");
+				}
+			} else {
+				if(cbname!=NULL && cbname->s!=NULL) {
+					keng = sr_kemi_eng_get();
+					if(keng!=NULL) {
+						if(cbparam && cbparam->s) {
+							evname = *cbparam;
+						}
+						if(keng->froute(t->uac[branch].reply, TM_ONREPLY_ROUTE,
+								cbname, &evname)<0) {
+							LM_ERR("error running event route kemi callback\n");
+						}
+					} else {
+						LM_DBG("event callback (%.*s) set, but no cfg engine\n",
+								cbname->len, cbname->s);
+					}
+				} else {
+					LM_WARN("no continue callback\n");
+				}
 			}
 			exec_post_script_cb(t->uac[branch].reply, cb_type);
 		}
@@ -423,40 +486,52 @@ int t_continue(unsigned int hash_index, unsigned int label,
 	}
 
 done:
+	t->flags &= ~T_ASYNC_CONTINUE;
+	if(t->async_backup.backup_route == TM_ONREPLY_ROUTE) {
+		/* response handling */
+		/* backup branch reply to free it later and reset it here under lock */
+		brpl = t->uac[branch].reply;
+		erpl = (void*)t->uac[branch].end_reply;
+		t->uac[branch].reply = 0;
+		t->uac[branch].end_reply = 0;
+	}
 	UNLOCK_ASYNC_CONTINUE(t);
 
 	if(t->async_backup.backup_route != TM_ONREPLY_ROUTE){
+		/* request handling */
 		/* unref the transaction */
 		t_unref(t->uas.request);
 	} else {
+		/* response handling */
 		tm_ctx_set_branch_index(T_BR_UNDEFINED);
 		/* unref the transaction */
-		t_unref(t->uac[branch].reply);
-		LOG(L_DBG,"DEBUG: t_continue_reply: Freeing earlier cloned reply\n");
+		t_unref(brpl);
+		LM_DBG("Freeing earlier cloned reply\n");
 
 		/* free lumps that were added during reply processing */
-		del_nonshm_lump( &(t->uac[branch].reply->add_rm) );
-		del_nonshm_lump( &(t->uac[branch].reply->body_lumps) );
-		del_nonshm_lump_rpl( &(t->uac[branch].reply->reply_lump) );
+		del_nonshm_lump( &(brpl->add_rm) );
+		del_nonshm_lump( &(brpl->body_lumps) );
+		del_nonshm_lump_rpl( &(brpl->reply_lump) );
 
 		/* free header's parsed structures that were added */
-		for( hdr=t->uac[branch].reply->headers ; hdr ; hdr=hdr->next ) {
+		for( hdr=brpl->headers ; hdr ; hdr=hdr->next ) {
 			if ( hdr->parsed && hdr_allocs_parse(hdr) &&
-				(hdr->parsed<(void*)t->uac[branch].reply ||
-				hdr->parsed>=(void*)t->uac[branch].end_reply)) {
+					(hdr->parsed<(void*)brpl ||
+					hdr->parsed>=(void*)erpl)) {
 				clean_hdr_field(hdr);
 				hdr->parsed = 0;
 			}
 		}
 
-		/* now go through hdr_fields themselves and remove the pkg allocated space */
-		hdr = t->uac[branch].reply->headers;
+		/* now go through hdr fields themselves
+		 * and remove the pkg allocated space */
+		hdr = brpl->headers;
 		while (hdr) {
-			if ( hdr && ((void*)hdr<(void*)t->uac[branch].reply ||
-				(void*)hdr>=(void*)t->uac[branch].end_reply)) {
-				//this header needs to be freed and removed form the list.
+			if ( hdr && ((void*)hdr<(void*)brpl ||
+					(void*)hdr>=(void*)erpl)) {
+				/* this header needs to be freed and removed form the list */
 				if (!prev) {
-					t->uac[branch].reply->headers = hdr->next;
+					brpl->headers = hdr->next;
 				} else {
 					prev->next = hdr->next;
 				}
@@ -468,36 +543,50 @@ done:
 				hdr = hdr->next;
 			}
 		}
-		sip_msg_free(t->uac[branch].reply);
-		t->uac[branch].reply = 0;
+		sip_msg_free(brpl);
 	}
 
-
+	set_t(backup_T, backup_T_branch);
 	return 0;
 
 kill_trans:
 	/* The script has hopefully set the error code. If not,
 	 * let us reply with a default error. */
 	if ((kill_transaction_unsafe(t,
-		tm_error ? tm_error : E_UNSPEC)) <=0
-	) {
-		LOG(L_ERR, "ERROR: t_continue: "
-			"reply generation failed\n");
+				tm_error ? tm_error : E_UNSPEC)) <=0) {
+		LM_ERR("reply generation failed\n");
 		/* The transaction must be explicitely released,
 		 * no more timer is running */
+		t->flags &= ~T_ASYNC_CONTINUE;
 		UNLOCK_ASYNC_CONTINUE(t);
 		t_release_transaction(t);
 	} else {
+		t->flags &= ~T_ASYNC_CONTINUE;
 		UNLOCK_ASYNC_CONTINUE(t);
 	}
 
+	/* unref the transaction */
 	if(t->async_backup.backup_route != TM_ONREPLY_ROUTE){
+		/* request handling */
 		t_unref(t->uas.request);
 	} else {
-		/* unref the transaction */
+		/* response handling */
 		t_unref(t->uac[branch].reply);
 	}
+	set_t(backup_T, backup_T_branch);
 	return ret;
+}
+
+int t_continue(unsigned int hash_index, unsigned int label,
+		struct action *route)
+{
+	return t_continue_helper(hash_index, label, route, NULL, NULL);
+}
+
+int t_continue_cb(unsigned int hash_index, unsigned int label,
+		str *cbname, str *cbparam)
+{
+	return t_continue_helper(hash_index, label, NULL, cbname, cbparam);
 }
 
 /* Revoke the suspension of the SIP request, i.e.
@@ -518,16 +607,14 @@ int t_cancel_suspend(unsigned int hash_index, unsigned int label)
 
 	t = get_t();
 	if (!t || t == T_UNDEFINED) {
-		LOG(L_ERR, "ERROR: t_revoke_suspend: " \
-			"no active transaction\n");
+		LM_ERR("no active transaction\n");
 		return -1;
 	}
 	/* Only to double-check the IDs */
 	if ((t->hash_index != hash_index)
 		|| (t->label != label)
 	) {
-		LOG(L_ERR, "ERROR: t_revoke_suspend: " \
-			"transaction id mismatch\n");
+		LM_ERR("transaction id mismatch\n");
 		return -1;
 	}
 
@@ -563,7 +650,7 @@ int t_cancel_suspend(unsigned int hash_index, unsigned int label)
 	}else{
 		branch = t->async_backup.backup_branch;
 
-		LOG(L_DBG,"DEBUG: t_cancel_suspend_reply: This is a cancel suspend for a response\n");
+		LM_DBG("This is a cancel suspend for a response\n");
 
 		t->uac[branch].reply->msg_flags &= ~FL_RPL_SUSPENDED;
 		if (t->uas.request) t->uas.request->msg_flags&= ~FL_RPL_SUSPENDED;

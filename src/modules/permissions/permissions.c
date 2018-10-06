@@ -89,6 +89,8 @@ static int check_all_branches = 1;
 
 int _perm_max_subnets = 512;
 
+int _perm_load_backends = 0xFFFF;
+
 /*
  * Convert the name of the files into table index
  */
@@ -139,6 +141,8 @@ static cmd_export_t cmds[] = {
 		ANY_ROUTE},
 	{"allow_trusted",  (cmd_function)allow_trusted_2,  2, fixup_spve_spve,
 		fixup_free_spve_spve, ANY_ROUTE},
+	{"allow_trusted",  (cmd_function)allow_trusted_3,  3, fixup_spve_all,
+		fixup_free_spve_all, ANY_ROUTE},
 	{"allow_uri",      (cmd_function)allow_uri, 2, double_fixup, 0,
 		REQUEST_ROUTE | FAILURE_ROUTE},
 	{"allow_address",  (cmd_function)w_allow_address, 3, fixup_allow_address,
@@ -178,24 +182,23 @@ static param_export_t params[] = {
 	{"mask_col",           PARAM_STR, &mask_col        },
 	{"port_col",           PARAM_STR, &port_col        },
 	{"max_subnets",        PARAM_INT, &_perm_max_subnets },
+	{"load_backends",      PARAM_INT, &_perm_load_backends },
 	{0, 0, 0}
 };
 
 
 /* Module interface */
 struct module_exports exports = {
-	"permissions",
+	"permissions",   /* module name */
 	DEFAULT_DLFLAGS, /* dlopen flags */
-	cmds,      /* Exported functions */
-	params,    /* Exported parameters */
-	0,         /* exported statistics */
-	0,         /* exported MI functions */
-	0,         /* exported pseudo-variables */
-	0,         /* extra processes */
-	mod_init,  /* module initialization function */
-	0,         /* response function */
-	mod_exit,  /* destroy function */
-	child_init /* child initialization function */
+	cmds,            /* Exported functions */
+	params,          /* Exported parameters */
+	0,               /* RPC method exports */
+	0,               /* exported pseudo-variables */
+	0,               /* response function */
+	mod_init,        /* module initialization function */
+	child_init,      /* child initialization function */
+	mod_exit         /* destroy function */
 };
 
 
@@ -576,33 +579,42 @@ static int double_fixup(void** param, int param_no)
  */
 static int mod_init(void)
 {
-	if(permissions_init_rpc()!=0)
-	{
+	if(_perm_load_backends==0) {
+		LM_ERR("failure - no backend to be loaded\n");
+		return -1;
+	}
+
+	if(permissions_init_rpc()!=0) {
 		LM_ERR("failed to register RPC commands\n");
 		return -1;
 	}
 
-	allow[0].filename = get_pathname(default_allow_file);
-	allow[0].rules = parse_config_file(allow[0].filename);
-	if (allow[0].rules) {
-		LM_DBG("default allow file (%s) parsed\n", allow[0].filename);
+	if(_perm_load_backends&PERM_LOAD_ALLOWFILE) {
+		allow[0].filename = get_pathname(default_allow_file);
+		allow[0].rules = parse_config_file(allow[0].filename);
+		if (allow[0].rules) {
+			LM_DBG("default allow file (%s) parsed\n", allow[0].filename);
+		} else {
+			LM_INFO("default allow file (%s) not found => empty rule set\n",
+					allow[0].filename);
+		}
 	} else {
-		LM_INFO("default allow file (%s) not found => empty rule set\n",
-				allow[0].filename);
+		allow[0].filename = NULL;
+		allow[0].rules = NULL;
 	}
 
-	deny[0].filename = get_pathname(default_deny_file);
-	deny[0].rules = parse_config_file(deny[0].filename);
-	if (deny[0].rules) {
-		LM_DBG("default deny file (%s) parsed\n", deny[0].filename);
+	if(_perm_load_backends&PERM_LOAD_DENYFILE) {
+		deny[0].filename = get_pathname(default_deny_file);
+		deny[0].rules = parse_config_file(deny[0].filename);
+		if (deny[0].rules) {
+			LM_DBG("default deny file (%s) parsed\n", deny[0].filename);
+		} else {
+			LM_INFO("default deny file (%s) not found => empty rule set\n",
+					deny[0].filename);
+		}
 	} else {
-		LM_INFO("default deny file (%s) not found => empty rule set\n",
-				deny[0].filename);
-	}
-
-	if (init_trusted() != 0) {
-		LM_ERR("failed to initialize the allow_trusted function\n");
-		return -1;
+		deny[0].filename = NULL;
+		deny[0].rules = NULL;
 	}
 
 	if (init_tag_avp(&tag_avp_param) < 0) {
@@ -610,9 +622,18 @@ static int mod_init(void)
 		return -1;
 	}
 
-	if (init_addresses() != 0) {
-		LM_ERR("failed to initialize the allow_address function\n");
-		return -1;
+	if(_perm_load_backends&PERM_LOAD_TRUSTEDDB) {
+		if (init_trusted() != 0) {
+			LM_ERR("failed to initialize the allow_trusted function\n");
+			return -1;
+		}
+	}
+
+	if(_perm_load_backends&PERM_LOAD_ADDRESSDB) {
+		if (init_addresses() != 0) {
+			LM_ERR("failed to initialize the allow_address function\n");
+			return -1;
+		}
 	}
 
 	if ((db_mode != DISABLE_CACHE) && (db_mode != ENABLE_CACHE)) {
@@ -1009,8 +1030,18 @@ static sr_kemi_t sr_kemi_permissions_exports[] = {
 			SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE }
 	},
 	{ str_init("permissions"), str_init("allow_address"),
-		SR_KEMIP_INT, allow_source_address,
+		SR_KEMIP_INT, allow_address,
 		{ SR_KEMIP_INT, SR_KEMIP_STR, SR_KEMIP_INT,
+			SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE }
+	},
+	{ str_init("permissions"), str_init("allow_source_address_group"),
+		SR_KEMIP_INT, ki_allow_source_address_group,
+		{ SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE,
+			SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE }
+	},
+	{ str_init("permissions"), str_init("allow_address_group"),
+		SR_KEMIP_INT, ki_allow_address_group,
+		{ SR_KEMIP_STR, SR_KEMIP_INT, SR_KEMIP_NONE,
 			SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE }
 	},
 

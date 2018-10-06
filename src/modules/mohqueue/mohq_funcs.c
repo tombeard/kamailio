@@ -1469,10 +1469,10 @@ if (!pbody->s)
   LM_ERR ("%sNo more memory!\n", pfncname);
   return;
   }
-strncpy (pbody->s, pfrag, pbody->len);
+memcpy (pbody->s, pfrag, pbody->len);
 if (pbody->s [pbody->len - 1] != '\n')
   {
-  strncpy (&pbody->s [pbody->len], SIPEOL, 2);
+  memcpy (&pbody->s [pbody->len], SIPEOL, 2);
   pbody->len += 2;
   }
 struct msg_start pstart [1];
@@ -2238,7 +2238,10 @@ strcpy (&pfile [npos], pcall->pmohq->mohq_mohfile);
 npos += strlen (&pfile [npos]);
 str pMOH [1] = {{pfile, npos}};
 pv_elem_t *pmodel;
-pv_parse_format (pMOH, &pmodel);
+if(pv_parse_format (pMOH, &pmodel)<0) {
+  LM_ERR("failed to parse pv format string\n");
+  return 0;
+}
 cmd_function fn_stream = bserver ? pmod_data->fn_rtp_stream_s
   : pmod_data->fn_rtp_stream_c;
 mohq_debug (pcall->pmohq, "%sStarting RTP link for call (%s)",

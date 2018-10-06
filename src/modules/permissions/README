@@ -64,6 +64,7 @@ Emmanuel Schmidbauer
               3.20. peer_tag_avp (AVP string)
               3.21. peer_tag_mode (integer)
               3.22. max_subnets (int)
+              3.23. load_backends (int)
 
         4. Functions
 
@@ -77,7 +78,7 @@ Emmanuel Schmidbauer
               4.8. allow_source_address([group_id])
               4.9. allow_source_address_group()
               4.10. allow_address_group(addr, port)
-              4.11. allow_trusted([src_ip_pvar, proto_pvar])
+              4.11. allow_trusted([src_ip_pvar, proto_pvar, furi_pvar])
 
         5. RPC Commands
 
@@ -114,17 +115,18 @@ Emmanuel Schmidbauer
    1.20. Set peer_tag_avp parameter
    1.21. Set peer_tag_mode parameter
    1.22. Set max_subnets parameter
-   1.23. allow_routing usage
-   1.24. allow_routing(basename) usage
-   1.25. allow_routing(allow_file, deny_file) usage
-   1.26. allow_register(basename) usage
-   1.27. allow_register(allow_file, deny_file) usage
-   1.28. allow_uri(basename, pvar) usage
-   1.29. allow_address() usage
-   1.30. allow_source_address(group_id) usage
-   1.31. allow_source_address_group() usage
+   1.23. Set load_backends parameter
+   1.24. allow_routing usage
+   1.25. allow_routing(basename) usage
+   1.26. allow_routing(allow_file, deny_file) usage
+   1.27. allow_register(basename) usage
+   1.28. allow_register(allow_file, deny_file) usage
+   1.29. allow_uri(basename, pvar) usage
+   1.30. allow_address() usage
+   1.31. allow_source_address(group_id) usage
    1.32. allow_source_address_group() usage
-   1.33. allow_trusted() usage
+   1.33. allow_source_address_group() usage
+   1.34. allow_trusted() usage
 
 Chapter 1. Admin Guide
 
@@ -167,6 +169,7 @@ Chapter 1. Admin Guide
         3.20. peer_tag_avp (AVP string)
         3.21. peer_tag_mode (integer)
         3.22. max_subnets (int)
+        3.23. load_backends (int)
 
    4. Functions
 
@@ -180,7 +183,7 @@ Chapter 1. Admin Guide
         4.8. allow_source_address([group_id])
         4.9. allow_source_address_group()
         4.10. allow_address_group(addr, port)
-        4.11. allow_trusted([src_ip_pvar, proto_pvar])
+        4.11. allow_trusted([src_ip_pvar, proto_pvar, furi_pvar])
 
    5. RPC Commands
 
@@ -339,7 +342,7 @@ Chapter 1. Admin Guide
      * transport protocol is either "ANY" or equal to the transport
        protocol of request or the transport protocol given in pvar, and
      * regular expression is either empty (NULL in database) or matches
-       the From URI of request.
+       the request's From (or optionally provided) URI.
 
    Otherwise the request is rejected.
 
@@ -393,6 +396,7 @@ Chapter 1. Admin Guide
    3.20. peer_tag_avp (AVP string)
    3.21. peer_tag_mode (integer)
    3.22. max_subnets (int)
+   3.23. load_backends (int)
 
 3.1. default_allow_file (string)
 
@@ -684,6 +688,21 @@ modparam("permissions", "peer_tag_mode", 1)
 modparam("permissions", "max_subnets", 1024)
 ...
 
+3.23. load_backends (int)
+
+   Control what backends should be loaded: 1 - address table; 2 - trusted
+   table; 4 - allow file; 8 - deny file.
+
+   It can be a combination (sum) of the options to load many backends
+   (e.g., 3 - loads address and trusted tables).
+
+   Default value is “0xffff” (load all backends).
+
+   Example 1.23. Set load_backends parameter
+...
+modparam("permissions", "load_backends", 1)
+...
+
 4. Functions
 
    4.1. allow_routing()
@@ -696,7 +715,7 @@ modparam("permissions", "max_subnets", 1024)
    4.8. allow_source_address([group_id])
    4.9. allow_source_address_group()
    4.10. allow_address_group(addr, port)
-   4.11. allow_trusted([src_ip_pvar, proto_pvar])
+   4.11. allow_trusted([src_ip_pvar, proto_pvar, furi_pvar])
 
 4.1.  allow_routing()
 
@@ -707,7 +726,7 @@ modparam("permissions", "max_subnets", 1024)
 
    This function can be used from REQUEST_ROUTE, FAILURE_ROUTE.
 
-   Example 1.23. allow_routing usage
+   Example 1.24. allow_routing usage
 ...
 if (allow_routing()) {
         t_relay();
@@ -730,7 +749,7 @@ if (allow_routing()) {
 
    This function can be used from REQUEST_ROUTE, FAILURE_ROUTE.
 
-   Example 1.24. allow_routing(basename) usage
+   Example 1.25. allow_routing(basename) usage
 ...
 if (allow_routing("basename")) {
         t_relay();
@@ -755,7 +774,7 @@ if (allow_routing("basename")) {
 
    This function can be used from REQUEST_ROUTE, FAILURE_ROUTE.
 
-   Example 1.25. allow_routing(allow_file, deny_file) usage
+   Example 1.26. allow_routing(allow_file, deny_file) usage
 ...
 if (allow_routing("rules.allow", "rules.deny")) {
         t_relay();
@@ -778,7 +797,7 @@ if (allow_routing("rules.allow", "rules.deny")) {
 
    This function can be used from REQUEST_ROUTE, FAILURE_ROUTE.
 
-   Example 1.26. allow_register(basename) usage
+   Example 1.27. allow_register(basename) usage
 ...
 if (method=="REGISTER") {
         if (allow_register("register")) {
@@ -808,7 +827,7 @@ if (method=="REGISTER") {
 
    This function can be used from REQUEST_ROUTE, FAILURE_ROUTE.
 
-   Example 1.27. allow_register(allow_file, deny_file) usage
+   Example 1.28. allow_register(allow_file, deny_file) usage
 ...
 if (method=="REGISTER") {
         if (allow_register("register.allow", "register.deny")) {
@@ -837,7 +856,7 @@ if (method=="REGISTER") {
 
    This function can be used from REQUEST_ROUTE, FAILURE_ROUTE.
 
-   Example 1.28. allow_uri(basename, pvar) usage
+   Example 1.29. allow_uri(basename, pvar) usage
 ...
 if (allow_uri("basename", "$rt")) {  // Check Refer-To URI
         t_relay();
@@ -863,7 +882,7 @@ if (allow_uri("basename", "$avp(i:705)") {  // Check URI stored in $avp(i:705)
 
    This function can be used from REQUEST_ROUTE, FAILURE_ROUTE.
 
-   Example 1.29. allow_address() usage
+   Example 1.30. allow_address() usage
 ...
 
 // Check if source address/port is in group 1
@@ -885,7 +904,7 @@ if (!allow_address("2", "$avp(dst_adr)", "$avp(dst_port)") {
 
    This function can be used from REQUEST_ROUTE, FAILURE_ROUTE.
 
-   Example 1.30. allow_source_address(group_id) usage
+   Example 1.31. allow_source_address(group_id) usage
 ...
 
 // Check source address/port of request
@@ -902,7 +921,7 @@ if (!allow_source_address("1")) {
 
    This function can be used from REQUEST_ROUTE, FAILURE_ROUTE.
 
-   Example 1.31. allow_source_address_group() usage
+   Example 1.32. allow_source_address_group() usage
 ...
 
 $var(group) = allow_source_address_group();
@@ -920,7 +939,7 @@ if ($var(group) != -1) {
 
    This function can be used from ANY_ROUTE.
 
-   Example 1.32. allow_source_address_group() usage
+   Example 1.33. allow_source_address_group() usage
 ...
 
 $var(group) = allow_address_group("1.2.3.4", "5060");
@@ -929,31 +948,40 @@ if ($var(group) != -1) {
 };
 ...
 
-4.11.  allow_trusted([src_ip_pvar, proto_pvar])
+4.11.  allow_trusted([src_ip_pvar, proto_pvar, furi_pvar])
 
    Checks based either on request's source address and transport protocol
    or source address and transport protocol given in pvar arguments, and
-   From URI of request if request can be trusted without authentication.
-   Returns “1” if a match is found as described in Section 1.5, “Trusted
-   Requests” and “-1” otherwise. If a match is found and peer_tag_avp has
-   been defined, adds a non-NULL tag column value of the matching peer to
-   AVP peer_tag_avp.
+   From URI of request (or furi_pvar if provided) if request can be
+   trusted without authentication. Returns “1” if a match is found as
+   described in Section 1.5, “Trusted Requests” and “-1” otherwise. If a
+   match is found and peer_tag_avp has been defined, adds a non-NULL tag
+   column value of the matching peer to AVP peer_tag_avp.
 
-   Source address and transport protocol given in pvar arguments must be
-   in string format. Valid transport protocol values are (ignoring case)
-   "any", "udp, "tcp", "tls", "ws", "wss" and "sctp".
+   NOTE: source IP is matched using string comparison. Be careful if the
+   IP can have different forms, for a safer alternative for matching IP
+   addresses, look at allow_source_address or allow_address().
+
+   Source address, transport protocol and uri given in the arguments must
+   be in string format and they can contain script variables. Valid
+   transport protocol values are (ignoring case) "any", "udp, "tcp",
+   "tls", "ws", "wss" and "sctp".
 
    This function can be used from REQUEST_ROUTE, FAILURE_ROUTE.
 
-   Example 1.33. allow_trusted() usage
+   Example 1.34. allow_trusted() usage
 ...
 if (allow_trusted()) {
         t_relay();
-};
+}
 ...
 if (allow_trusted("$si", "$proto")) {
         t_relay();
-};
+}
+...
+if (allow_trusted("$si", "any", "$ai")) {
+        t_relay();
+}
 ...
 
 5. RPC Commands

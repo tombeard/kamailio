@@ -35,46 +35,26 @@
 /**
  * append new branches with generic parameters
  */
-int corex_append_branch(sip_msg_t *msg, gparam_t *pu, gparam_t *pq)
+int corex_append_branch(sip_msg_t *msg, str *uri, str *qv)
 {
-	str uri = {0};
-	str qv = {0};
 	int ret = 0;
 
 	qvalue_t q = Q_UNSPECIFIED;
 	flag_t branch_flags = 0;
 
-	if (pu!=NULL)
+	if(qv!=NULL && qv->len>0 && str2q(&q, qv->s, qv->len)<0)
 	{
-		if(fixup_get_svalue(msg, pu, &uri)!=0)
-		{
-			LM_ERR("cannot get the URI parameter\n");
-			return -1;
-		}
+		LM_ERR("cannot parse the Q parameter\n");
+		return -1;
 	}
-
-	if (pq!=NULL)
-	{
-		if(fixup_get_svalue(msg, pq, &qv)!=0)
-		{
-			LM_ERR("cannot get the Q parameter\n");
-			return -1;
-		}
-		if(qv.len>0 && str2q(&q, qv.s, qv.len)<0)
-		{
-			LM_ERR("cannot parse the Q parameter\n");
-			return -1;
-		}
-	}
-
 
 	getbflagsval(0, &branch_flags);
-	ret = append_branch(msg, (uri.len>0)?&uri:0, &msg->dst_uri,
+	ret = append_branch(msg, (uri && uri->len>0)?uri:0, &msg->dst_uri,
 			    &msg->path_vec, q, branch_flags,
 			    msg->force_send_socket, 0, 0, 0, 0);
 
 
-	if(uri.len<=0)
+	if(uri==NULL ||  uri->len<=0)
 	{
 		/* reset all branch attributes if r-uri was shifted to branch */
 		reset_force_socket(msg);
@@ -94,6 +74,30 @@ int corex_append_branch(sip_msg_t *msg, gparam_t *pu, gparam_t *pq)
 	}
 
 	return ret;
+}
+
+/**
+ * append new branches with generic parameters
+ */
+int w_corex_append_branch(sip_msg_t *msg, gparam_t *pu, gparam_t *pq)
+{
+	str uri = {0};
+	str qv = {0};
+	if (pu!=NULL) {
+		if(fixup_get_svalue(msg, pu, &uri)!=0)
+		{
+			LM_ERR("cannot get the URI parameter\n");
+			return -1;
+		}
+	}
+	if (pq!=NULL) {
+		if(fixup_get_svalue(msg, pq, &qv)!=0)
+		{
+			LM_ERR("cannot get the Q parameter\n");
+			return -1;
+		}
+	}
+	return corex_append_branch(msg, (pu!=NULL)?&uri:NULL, (pq!=NULL)?&qv:NULL);
 }
 
 typedef struct corex_alias {
@@ -311,15 +315,17 @@ error:
 /**
  *
  */
-int corex_send_data(str *puri, str *pdata)
+int corex_send_data(str *puri, str *psock, str *pdata)
 {
 	struct dest_info dst;
 	sip_uri_t next_hop;
 	int ret = 0;
 	char proto;
+	socket_info_t *si = NULL;
+	int sport, sproto;
+	str shost;
 
-	if(parse_uri(puri->s, puri->len, &next_hop)<0)
-	{
+	if(parse_uri(puri->s, puri->len, &next_hop)<0) {
 		LM_ERR("bad dst sip uri <%.*s>\n", puri->len, puri->s);
 		return -1;
 	}
@@ -333,12 +339,28 @@ int corex_send_data(str *puri, str *pdata)
 			ZSW(next_hop.host.s));
 		return -1;
 	}
+
+	if(psock && psock->s && psock->len>0) {
+		if (parse_phostport(psock->s, &shost.s, &shost.len, &sport, &sproto) < 0) {
+			LM_ERR("invalid socket specification\n");
+			return -1;
+		}
+		si = grep_sock_info(&shost, (unsigned short)sport, (unsigned short)sproto);
+		if (si==NULL) {
+			LM_WARN("local socket not found: %.*s\n", psock->len, psock->s);
+		}
+	}
+
 	dst.proto = proto;
 	if(dst.proto==PROTO_NONE) dst.proto = PROTO_UDP;
 
 	if (dst.proto == PROTO_UDP)
 	{
-		dst.send_sock=get_send_socket(0, &dst.to, PROTO_UDP);
+		if(si!=NULL) {
+			dst.send_sock=si;
+		} else {
+			dst.send_sock=get_send_socket(0, &dst.to, PROTO_UDP);
+		}
 		if (dst.send_sock!=0) {
 			ret=udp_send(&dst, pdata->s, pdata->len);
 		} else {
@@ -348,6 +370,9 @@ int corex_send_data(str *puri, str *pdata)
 	}
 #ifdef USE_TCP
 	else if(dst.proto == PROTO_TCP) {
+		if(si!=NULL) {
+			dst.send_sock=si;
+		}
 		/*tcp*/
 		dst.id=0;
 		ret=tcp_send(&dst, 0, pdata->s, pdata->len);
@@ -355,6 +380,9 @@ int corex_send_data(str *puri, str *pdata)
 #endif
 #ifdef USE_TLS
 	else if(dst.proto == PROTO_TLS) {
+		if(si!=NULL) {
+			dst.send_sock=si;
+		}
 		/*tls*/
 		dst.id=0;
 		ret=tcp_send(&dst, 0, pdata->s, pdata->len);
@@ -363,7 +391,11 @@ int corex_send_data(str *puri, str *pdata)
 #ifdef USE_SCTP
 	else if(dst.proto == PROTO_SCTP) {
 		/*sctp*/
-		dst.send_sock=get_send_socket(0, &dst.to, PROTO_SCTP);
+		if(si!=NULL) {
+			dst.send_sock=si;
+		} else {
+			dst.send_sock=get_send_socket(0, &dst.to, PROTO_SCTP);
+		}
 		if (dst.send_sock!=0) {
 			ret=sctp_core_msg_send(&dst, pdata->s, pdata->len);
 		} else {

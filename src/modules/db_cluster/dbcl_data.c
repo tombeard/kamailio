@@ -1,6 +1,4 @@
 /*
- * $Id$
- *
  * DB CLuster core functions
  *
  * Copyright (C) 2012 Daniel-Constantin Mierla (asipto.com)
@@ -115,6 +113,7 @@ int dbcl_init_con(str *name, str *url)
 	if(sc->sinfo==NULL)
 	{
 		LM_ERR("no shm memory\n");
+		pkg_free(sc);
 		return -1;
 	}
 	memset(sc->sinfo, 0, sizeof(dbcl_shared_t));
@@ -442,7 +441,8 @@ int dbcl_init_connections(dbcl_cls_t *cls)
 	{
 		for(j=0; j<cls->rlist[i].clen; j++)
 		{
-			if(cls->rlist[i].clist[j] != NULL && cls->rlist[i].clist[j]->flags!=0)
+			if(cls->rlist[i].clist[j] != NULL && cls->rlist[i].clist[j]->flags!=0
+					&& cls->rlist[i].clist[j]->dbh==NULL)
 			{
 				LM_DBG("setting up read connection [%.*s]\n",
 							cls->rlist[i].clist[j]->name.len,
@@ -459,7 +459,8 @@ int dbcl_init_connections(dbcl_cls_t *cls)
 		}
 		for(j=0; j<cls->wlist[i].clen; j++)
 		{
-			if(cls->wlist[i].clist[j] != NULL && cls->wlist[i].clist[j]->flags!=0)
+			if(cls->wlist[i].clist[j] != NULL && cls->wlist[i].clist[j]->flags!=0
+					&& cls->wlist[i].clist[j]->dbh==NULL)
 			{
 				LM_DBG("setting up write connection [%.*s]\n",
 							cls->wlist[i].clist[j]->name.len,

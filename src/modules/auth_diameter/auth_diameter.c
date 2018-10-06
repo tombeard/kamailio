@@ -1,6 +1,4 @@
 /*
- * $Id$ 
- *
  * Digest Authentication - Diameter support
  *
  * Copyright (C) 2001-2003 FhG Fokus
@@ -21,11 +19,6 @@
  * along with this program; if not, write to the Free Software 
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  *
- * History:
- * -------
- *  
- *  
- * 2006-03-01 pseudo variables support for domain name (bogdan)
  */
 
 #include <stdio.h>
@@ -68,6 +61,7 @@ int diameter_is_user_in(struct sip_msg* _msg, char* group, char* _s2);
 char* diameter_client_host = "localhost";
 int diameter_client_port = 3000;
 int use_domain = 0;
+int sockfd = -1;
 
 rd_buf_t *rb;
 
@@ -102,16 +96,14 @@ static param_export_t params[] = {
 struct module_exports exports = {
 	"auth_diameter",
 	DEFAULT_DLFLAGS, /* dlopen flags */
-	cmds,          /* Exported functions */
-	params,        /* Exported parameters */
-	0,             /* exported statistics */
-	0,             /* exported MI functions */
-	0,             /* exported pseudo-variables */
-	0,             /* extra processes */
-	mod_init,      /* module initialization function */
-	0,             /* response function */
-	0,             /* destroy function */
-	mod_child_init /* child initialization function */
+	cmds,            /* Exported functions */
+	params,          /* Exported parameters */
+	0,               /* exported RPC methods */
+	0,               /* exported pseudo-variables */
+	0,               /* response function */
+	mod_init,        /* module initialization function */
+	mod_child_init,  /* child initialization function */
+	0                /* destroy function */
 };
 
 

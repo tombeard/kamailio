@@ -32,6 +32,10 @@
 
 #include "../msg_parser.h"
 
+#define      NO_HOLD 0
+#define RFC2543_HOLD 1
+#define RFC3264_HOLD 2
+
 typedef struct sdp_payload_attr {
 	struct sdp_payload_attr *next;
 	int payload_num; /**< payload index inside stream */
@@ -98,6 +102,7 @@ typedef struct sdp_session_cell {
 	int pf;           /**< connection address family: AF_INET/AF_INET6 */
 	str ip_addr;      /**< connection address */
 	/* o=<username> <session id> <version> <network type> <address type> <address> */
+	str o_sess_version; /** < origin session version number */
 	int o_pf;         /**< origin address family: AF_INET/AF_INET6 */
 	str o_ip_addr;    /**< origin address */
 	/* b=<bwtype>:<bandwidth> */

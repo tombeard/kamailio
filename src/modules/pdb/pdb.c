@@ -108,18 +108,16 @@ static param_export_t params[] = {
 
 
 struct module_exports exports = {
-	"pdb",
+	"pdb",           /* module name */
 	DEFAULT_DLFLAGS, /* dlopen flags */
-	cmds,       /* Exported functions */
-	params,     /* Export parameters */
-	0,          /* exported statistics */
-	0,          /* exported MI functions */
-	0,          /* exported pseudo-variables */
-	0,          /* extra processes */
-	mod_init,   /* Module initialization function */
-	0,          /* Response function */
-	mod_destroy,/* Destroy function */
-	child_init  /* Child initialization function */
+	cmds,            /* cmd (cfg function) exports */
+	params,          /* param exports */
+	0,               /* RPC method exports */
+	0,               /* pseudo-variables exports */
+	0,               /* response handling function */
+	mod_init,        /* Module initialization function */
+	child_init,      /* Child initialization function */
+	mod_destroy      /* Destroy function */
 };
 
 
@@ -198,6 +196,7 @@ static int pdb_query(struct sip_msg *_msg, struct multiparam_t *_number, struct 
 	struct timeval tstart, tnow;
 	struct server_item_t *server;
 	short int carrierid, *_id;
+	short int _idv;
     char buf[sizeof(struct pdb_msg)];
 	size_t reqlen;
 	int_str avp_val;
@@ -324,7 +323,7 @@ static int pdb_query(struct sip_msg *_msg, struct multiparam_t *_number, struct 
 			}
 			return -1;
 		}
-		
+
 		ret=poll(server_list->fds, server_list->nserver, timeout-td);
 		for (i=0; i<server_list->nserver; i++) {
 			if (server_list->fds[i].revents & POLLIN) {
@@ -334,8 +333,8 @@ static int pdb_query(struct sip_msg *_msg, struct multiparam_t *_number, struct 
                             memcpy(&msg, buf, bytes_received);
                             pdb_msg_dbg(msg, "Kamailio pdb client receives:");
 
-                            _id = (short int *)&(msg.hdr.id); /* make gcc happy */
-                            msg.hdr.id = ntohs(*_id);
+                            _idv = msg.hdr.id; /* make gcc happy */
+                            msg.hdr.id = ntohs(_idv);
 
                             switch (msg.hdr.code) {
                                 case PDB_CODE_OK:

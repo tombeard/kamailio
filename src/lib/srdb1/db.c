@@ -60,7 +60,7 @@
 #include "db_query.h"
 #include "db.h"
 
-static unsigned int MAX_URL_LENGTH = 255;	/*!< maximum length of a SQL URL */
+static unsigned int MAX_URL_LENGTH = 1023;	/*!< maximum length of a SQL URL */
 
 
 int db_check_api(db_func_t* dbf, char *mname)
@@ -374,7 +374,8 @@ int db_table_version(const db_func_t* dbf, db1_con_t* connection, const str* tab
 	str *version = &version_table;
 	str tmp1 = str_init(TABLENAME_COLUMN);
 	str tmp2 = str_init(VERSION_COLUMN);
-	int ret;
+	int ret = 0;
+	int val_type;
 
 	if (!dbf||!connection || !table || !table->s) {
 		LM_CRIT("invalid parameter value\n");
@@ -390,9 +391,9 @@ int db_table_version(const db_func_t* dbf, db1_con_t* connection, const str* tab
 	VAL_TYPE(val) = DB1_STR;
 	VAL_NULL(val) = 0;
 	VAL_STR(val) = *table;
-	
+
 	col[0] = &tmp2;
-	
+
 	if (dbf->query(connection, key, 0, val, col, 1, 1, 0, &res) < 0) {
 		LM_ERR("error in db_query\n");
 		return -1;
@@ -412,7 +413,10 @@ int db_table_version(const db_func_t* dbf, db1_con_t* connection, const str* tab
 	}
 
 	ver = ROW_VALUES(RES_ROWS(res));
-	if ( VAL_TYPE(ver)!=DB1_INT || VAL_NULL(ver) ) {
+	val_type = VAL_TYPE(ver);
+	if ( (val_type!=DB1_INT && val_type!=DB1_DOUBLE && val_type!=DB1_BIGINT
+				&& val_type!=DB1_UINT && val_type!=DB1_UBIGINT)
+			|| VAL_NULL(ver) ) {
 		LM_ERR("invalid type (%d) or nul (%d) version "
 			"columns for %.*s\n", VAL_TYPE(ver), VAL_NULL(ver),
 			table->len, ZSW(table->s));
@@ -420,8 +424,20 @@ int db_table_version(const db_func_t* dbf, db1_con_t* connection, const str* tab
 		return -1;
 	}
 
-	ret = VAL_INT(ver);
+	if (val_type == DB1_INT) {
+		ret = VAL_INT(ver);
+	} else if (val_type == DB1_UINT) {
+		ret = (int)VAL_UINT(ver);
+	} else if (val_type == DB1_BIGINT) {
+		ret = (int)VAL_BIGINT(ver);
+	} else if (val_type == DB1_UBIGINT) {
+		ret = (int)VAL_UBIGINT(ver);
+	} else if (val_type == DB1_DOUBLE) {
+		ret = (int)VAL_DOUBLE(ver);
+	}
+
 	dbf->free_result(connection, res);
+
 	return ret;
 }
 
@@ -429,14 +445,17 @@ int db_table_version(const db_func_t* dbf, db1_con_t* connection, const str* tab
  * Check the table version
  * 0 means ok, -1 means an error occurred
  */
-int db_check_table_version(db_func_t* dbf, db1_con_t* dbh, const str* table, const unsigned int version)
+int db_check_table_version(db_func_t* dbf, db1_con_t* dbh, const str* table,
+		const unsigned int version)
 {
 	int ver = db_table_version(dbf, dbh, table);
 	if (ver < 0) {
 		LM_ERR("querying version for table %.*s\n", table->len, table->s);
 		return -1;
-	} else if (ver != version) {
-		LM_ERR("invalid version %d for table %.*s found, expected %d (check table structure and table \"version\")\n", ver, table->len, table->s, version);
+	} else if (ver != (int)version) {
+		LM_ERR("invalid version %d for table %.*s found, expected %u"
+				" (check table structure and table \"version\")\n",
+				ver, table->len, table->s, version);
 		return -1;
 	}
 	return 0;

@@ -133,6 +133,11 @@ int sl_reply_helper(struct sip_msg *msg, int code, char *reason, str *tag)
 	if (msg->first_line.u.request.method_value==METHOD_ACK)
 		goto error;
 
+	if(msg->msg_flags & FL_MSG_NOREPLY) {
+		LM_INFO("message marked with no-reply flag\n");
+		return -2;
+	}
+
 	init_dest_info(&dst);
 	if (reply_to_via) {
 		if (update_sock_struct_from_via(&dst.to, msg, msg->via1 )==-1)
@@ -355,6 +360,11 @@ int sl_reply_error(struct sip_msg *msg )
 	int sip_error;
 	int ret;
 
+	if(msg->msg_flags & FL_MSG_NOREPLY) {
+		LM_INFO("message marked with no-reply flag\n");
+		return -2;
+	}
+
 	ret=err2reason_phrase( prev_ser_error, &sip_error,
 		err_buf, sizeof(err_buf), "SL");
 	if (ret>0) {
@@ -384,7 +394,7 @@ int sl_filter_ACK(struct sip_msg *msg, unsigned int flags, void *bar )
 	/*check the timeout value*/
 	if ( *(sl_timeout)<= get_ticks_raw() )
 	{
-		LM_DBG("to late to be a local ACK!\n");
+		LM_DBG("too late to be a local ACK!\n");
 		goto pass_it;
 	}
 

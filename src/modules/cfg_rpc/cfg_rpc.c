@@ -310,13 +310,137 @@ static const char* rpc_get_doc[2] = {
 
 static void rpc_get(rpc_t* rpc, void* c)
 {
-	str	group, var;
-	void	*val;
-	unsigned int	val_type;
-	int	ret;
-	unsigned int	*group_id;
+	str     group, var;
+	void    *val;
+	unsigned int    val_type;
+	int     ret, n;
+	unsigned int    *group_id;
+	void *rh = NULL;
 
-	if (rpc->scan(c, "SS", &group, &var) < 2)
+	n = rpc->scan(c, "S*S", &group, &var);
+	/*  2: both group and variable name are present
+	 * -1: only group is present, print all variables in the group */
+	if(n<1) {
+		rpc->fault(c, 500, "Failed to get the parameters");
+		return;
+	}
+	if (n == 1) {
+		var.s = NULL;
+		var.len = 0;
+	}
+	if (get_group_id(&group, &group_id)) {
+		rpc->fault(c, 400, "Wrong group syntax. Use either \"group\", or \"group[id]\"");
+		return;
+	}
+	if(var.len != 0) {
+		LM_DBG("getting value for variable: %.*s.%.*s\n", group.len, group.s,
+				var.len, var.s);
+		/* print value for one variable */
+		val = NULL;
+		ret = cfg_get_by_name(ctx, &group, group_id, &var,
+				&val, &val_type);
+		if (ret < 0) {
+			rpc->fault(c, 400, "Failed to get the variable");
+			return;
+		} else if (ret > 0) {
+			rpc->fault(c, 400, "Variable exists, but it is not readable via RPC interface");
+			return;
+		}
+		switch (val_type) {
+			case CFG_VAR_INT:
+				rpc->add(c, "d", (int)(long)val);
+				break;
+			case CFG_VAR_STRING:
+				rpc->add(c, "s", (char *)val);
+				break;
+			case CFG_VAR_STR:
+				rpc->add(c, "S", (str *)val);
+				break;
+			case CFG_VAR_POINTER:
+				rpc->rpl_printf(c, "%p", val);
+				break;
+		}
+	} else {
+		/* print values for all variables in the group */
+		void            *h;
+		str             gname;
+		cfg_def_t       *def;
+		int             i;
+		char pbuf[32];
+		int plen;
+		LM_DBG("getting values for group: %.*s\n", group.len, group.s);
+		rpc->add(c, "{", &rh);
+		if(rh==NULL) {
+			LM_ERR("failed to add root structure\n");
+			rpc->fault(c, 500, "Failed to add root structure");
+			return;
+		}
+		cfg_get_group_init(&h);
+		while(cfg_get_group_next(&h, &gname, &def)) {
+			if (((gname.len == group.len) && (memcmp(gname.s, group.s, group.len) == 0))) {
+				for (i=0; def[i].name; i++) {
+					var.s = def[i].name;
+					var.len = (int)strlen(def[i].name);
+					LM_DBG("getting value for variable: %.*s.%.*s\n",
+							group.len, group.s, var.len, var.s);
+					val = NULL;
+					ret = cfg_get_by_name(ctx, &group, group_id, &var,
+							&val, &val_type);
+					if (ret < 0) {
+						rpc->fault(c, 400, "Failed to get the variable");
+						return;
+					} else if (ret > 0) {
+						LM_DBG("skipping dynamic (callback) value for variable:"
+								" %.*s.%.*s (%p/%d)\n",
+								group.len, group.s, var.len, var.s, val, ret);
+						continue;
+					}
+					switch (val_type) {
+						case CFG_VAR_INT:
+							rpc->struct_add(rh, "d", var.s, (int)(long)val);
+							break;
+						case CFG_VAR_STRING:
+							rpc->struct_add(rh, "s", var.s, (char *)val);
+							break;
+						case CFG_VAR_STR:
+							rpc->struct_add(rh, "S", var.s, (str *)val);
+							break;
+						case CFG_VAR_POINTER:
+							plen = snprintf(pbuf, 32, "%p", val);
+							if(plen>0 && plen<32) {
+								rpc->struct_add(rh, "s", var.s, pbuf);
+							} else {
+								LM_ERR("error adding: %.*s.%s\n",
+										group.len, group.s, var.s);
+							}
+							break;
+					}
+
+				}
+			}
+		}
+	}
+
+}
+static const char* rpc_cfg_var_reset_doc[2] = {
+       "Reset all the values of a configuration group and commit the change immediately",
+       0
+};
+
+static void rpc_cfg_var_reset(rpc_t* rpc, void* c)
+{
+	void	*h;
+	str	gname, var;
+	cfg_def_t	*def;
+	void	*val;
+	int	i, ret;
+	str	group;
+	char	*ch;
+	unsigned int	*group_id;
+	unsigned int	val_type;
+	unsigned int	input_type;
+
+	if (rpc->scan(c, "S", &group) < 1)
 		return;
 
 	if (get_group_id(&group, &group_id)) {
@@ -324,37 +448,46 @@ static void rpc_get(rpc_t* rpc, void* c)
 		return;
 	}
 
-	ret = cfg_get_by_name(ctx, &group, group_id, &var,
-			&val, &val_type);
-	if (ret < 0) {
-		rpc->fault(c, 400, "Failed to get the variable");
-		return;
-		
-	} else if (ret > 0) {
-		rpc->fault(c, 400, "Variable exists, but it is not readable via RPC interface");
-		return;
-	}
+	cfg_get_group_init(&h);
+	while(cfg_get_group_next(&h, &gname, &def))
+		if (((gname.len == group.len) && (memcmp(gname.s, group.s, group.len) == 0)))
+		{
+			for (i=0; def[i].name; i++){
 
-	switch (val_type) {
-	case CFG_VAR_INT:
-		rpc->add(c, "d", (int)(long)val);
-		break;
+				var.s = def[i].name;
+				var.len = (int)strlen(def[i].name);
+				ret = cfg_get_default_value_by_name(ctx, &gname, group_id, &var,
+						&val, &val_type);
 
-	case CFG_VAR_STRING:
-		rpc->add(c, "s", (char *)val);
-		break;
+				if (ret != 0)
+					continue;
 
-	case CFG_VAR_STR:
-		rpc->add(c, "S", (str *)val);
-		break;
+				if (cfg_help(ctx, &group, &var,
+							&ch, &input_type)
+					) {
+					rpc->fault(c, 400, "Failed to get the variable description");
+					return;
+				}
 
-	case CFG_VAR_POINTER:
-		rpc->rpl_printf(c, "%p", val);
-		break;
-
-	}
-
+				if (input_type == CFG_INPUT_INT) {
+					ret = cfg_set_now_int(ctx, &gname, group_id, &var,
+							(int)(long)val);
+				} else if (input_type == CFG_INPUT_STRING) {
+					ret = cfg_set_now_string(ctx, &gname, group_id, &var, val);
+				} else {
+					rpc->fault(c, 500, "Unsupported input type");
+					return;
+				}
+				if(ret<0) {
+					rpc->fault(c, 500, "Reset failed");
+					return;
+				} else if(ret==1) {
+					LM_WARN("unexpected situation - variable not found\n");
+				}
+			}
+		}
 }
+
 
 static const char* rpc_help_doc[2] = {
         "Print the description of a configuration variable",
@@ -509,7 +642,7 @@ static void rpc_add_group_inst(rpc_t* rpc, void* c)
 }
 
 static const char* rpc_del_group_inst_doc[2] = {
-	"Delte an instance of a configuration group",
+	"Delete an instance of a configuration group",
 	0
 };
 
@@ -546,8 +679,9 @@ static rpc_export_t rpc_calls[] = {
 	{"cfg.commit",		rpc_commit,		rpc_commit_doc,		0},
 	{"cfg.rollback",	rpc_rollback,		rpc_rollback_doc,	0},
 	{"cfg.get",		rpc_get,		rpc_get_doc,		0},
+	{"cfg.reset",	rpc_cfg_var_reset,	rpc_cfg_var_reset_doc,	0},
 	{"cfg.help",		rpc_help,		rpc_help_doc,		0},
-	{"cfg.list",		rpc_list,		rpc_list_doc,		0},
+	{"cfg.list",		rpc_list,		rpc_list_doc,		RET_ARRAY},
 	{"cfg.diff",		rpc_diff,		rpc_diff_doc,		0},
 	{"cfg.add_group_inst",	rpc_add_group_inst,	rpc_add_group_inst_doc,	0},	
 	{"cfg.del_group_inst",	rpc_del_group_inst,	rpc_del_group_inst_doc,	0},	
@@ -557,12 +691,13 @@ static rpc_export_t rpc_calls[] = {
 /* Module interface */
 struct module_exports exports = {
 	"cfg_rpc",
-	0,		/* Exported functions */
-	rpc_calls,	/* RPC methods */
-	0,		/* Exported parameters */
-	mod_init,	/* module initialization function */
-	0,		/* response function */
-	0,		/* destroy function */
-	0,		/* oncancel function */
-	0		/* child initialization function */
+	DEFAULT_DLFLAGS, /* dlopen flags */
+	0,		 /* Exported functions */
+	0,		 /* Exported parameters */
+	rpc_calls,	 /* RPC methods */
+	0,		 /* exported pseudo-variables */
+	0,		 /* response function */
+	mod_init,	 /* module initialization function */
+	0,		 /* child initialization function */
+	0		 /* destroy function */
 };

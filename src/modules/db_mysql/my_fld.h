@@ -1,4 +1,4 @@
-/* 
+/*
  * Copyright (C) 2001-2003 FhG Fokus
  * Copyright (C) 2006-2007 iptelorg GmbH
  *
@@ -14,8 +14,8 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License 
- * along with this program; if not, write to the Free Software 
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  */
 
@@ -30,11 +30,20 @@
 #include "../../lib/srdb2/db_fld.h"
 #include <mysql.h>
 
+/* MariaDB exports MYSQL_VERSION_ID as well, but changed numbering */
+#if MYSQL_VERSION_ID > 80000 && ! defined MARIADB_BASE_VERSION
+#include <stdbool.h>
+#endif
+
 struct my_fld {
 	db_drv_t gen;
 
 	char* name;
+#if MYSQL_VERSION_ID > 80000 && ! defined MARIADB_BASE_VERSION
+	bool is_null;
+#else
 	my_bool is_null;
+#endif
 	MYSQL_TIME time;
 	unsigned long length;
 	str buf;

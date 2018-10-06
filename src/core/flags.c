@@ -27,6 +27,7 @@
 
 
 #include <limits.h>
+#include <stdint.h>
 #include "sr_module.h"
 #include "dprint.h"
 #include "parser/msg_parser.h"
@@ -301,7 +302,7 @@ static int fixup_t_flag(void** param, int param_no)
 
 	if (*code < FL_MAX && token==0) {
 		LM_ERR("TM module: too high flag number: %s (%d)\n; lower number"
-			" bellow %d reserved\n", (char *) (*param), *code, FL_MAX );
+			" below %d reserved\n", (char *) (*param), *code, FL_MAX );
 		goto error;
 	}
 
@@ -317,5 +318,42 @@ error:
 	return E_CFG;
 }
 
-
 #endif
+
+/**
+ *
+ */
+int setxflag(struct sip_msg* msg, flag_t flag)
+{
+	uint32_t fi;
+	uint32_t fb;
+	fi = flag / (sizeof(flag_t)*CHAR_BIT);
+	fb = flag % (sizeof(flag_t)*CHAR_BIT);
+	msg->xflags[fi] |= 1 << fb;
+	return 1;
+}
+
+/**
+ *
+ */
+int resetxflag(struct sip_msg* msg, flag_t flag)
+{
+	uint32_t fi;
+	uint32_t fb;
+	fi = flag / (sizeof(flag_t)*CHAR_BIT);
+	fb = flag % (sizeof(flag_t)*CHAR_BIT);
+	msg->xflags[fi] &= ~ (1 << fb);
+	return 1;
+}
+
+/**
+ *
+ */
+int isxflagset(struct sip_msg* msg, flag_t flag)
+{
+	uint32_t fi;
+	uint32_t fb;
+	fi = flag / (sizeof(flag_t)*CHAR_BIT);
+	fb = flag % (sizeof(flag_t)*CHAR_BIT);
+	return (msg->xflags[fi] & (1<<fb)) ? 1 : -1;
+}

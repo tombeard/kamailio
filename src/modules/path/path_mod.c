@@ -52,6 +52,7 @@
 #include "../../core/sr_module.h"
 #include "../../core/mem/mem.h"
 #include "../../core/mod_fix.h"
+#include "../../core/kemi.h"
 #include "../outbound/api.h"
 #include "../rr/api.h"
 
@@ -63,7 +64,10 @@ MODULE_VERSION
 
 /*! \brief If received-param of current Route uri should be used
  * as dst-uri. */
-int use_received = 0;
+int path_use_received = 0;
+
+int path_received_format = 0;
+int path_enable_r2 = 0;
 
 /*! \brief
  * Module initialization function prototype
@@ -104,7 +108,9 @@ static cmd_export_t cmds[] = {
  * Exported parameters
  */
 static param_export_t params[] = {
-	{"use_received", INT_PARAM, &use_received },
+	{"use_received",    INT_PARAM, &path_use_received },
+	{"received_format", INT_PARAM, &path_received_format },
+	{"enable_r2",       INT_PARAM, &path_enable_r2 },
 	{ 0, 0, 0 }
 };
 
@@ -113,24 +119,22 @@ static param_export_t params[] = {
  * Module interface
  */
 struct module_exports exports = {
-	"path", 
+	"path",          /* module name */
 	DEFAULT_DLFLAGS, /* dlopen flags */
-	cmds,       /* Exported functions */
-	params,     /* Exported parameters */
-	0,          /* exported statistics */
-	0,          /* exported MI functions */
-	0,          /* exported pseudo-variables */
-	0,          /* extra processes */
-	mod_init,   /* module initialization function */
-	0,          /* response function */
-	0,    /* destroy function */
-	0           /* child initialization function */
+	cmds,            /* Exported functions */
+	params,          /* Exported parameters */
+	0,               /* RPC method exports */
+	0,               /* exported pseudo-variables */
+	0,               /* response function */
+	mod_init,        /* module initialization function */
+	0,               /* child initialization function */
+	0                /* destroy function */
 };
 
 
 static int mod_init(void)
 {
-	if (use_received) {
+	if (path_use_received) {
 		if (load_rr_api(&path_rrb) != 0) {
 			LM_ERR("failed to load rr-API\n");
 			return -1;
@@ -147,6 +151,54 @@ static int mod_init(void)
 		LM_INFO("outbound module not available\n");
 		memset(&path_obb, 0, sizeof(ob_api_t));
 	}
-	
+
+	return 0;
+}
+
+/**
+ *
+ */
+/* clang-format off */
+static sr_kemi_t sr_kemi_path_exports[] = {
+	{ str_init("path"), str_init("add_path"),
+		SR_KEMIP_INT, ki_add_path,
+		{ SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE,
+			SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE }
+	},
+	{ str_init("path"), str_init("add_path_user"),
+		SR_KEMIP_INT, ki_add_path_user,
+		{ SR_KEMIP_STR, SR_KEMIP_NONE, SR_KEMIP_NONE,
+			SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE }
+	},
+	{ str_init("path"), str_init("add_path_user_params"),
+		SR_KEMIP_INT, ki_add_path_user_params,
+		{ SR_KEMIP_STR, SR_KEMIP_STR, SR_KEMIP_NONE,
+			SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE }
+	},
+	{ str_init("path"), str_init("add_path_received"),
+		SR_KEMIP_INT, ki_add_path_received,
+		{ SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE,
+			SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE }
+	},
+	{ str_init("path"), str_init("add_path_received_user"),
+		SR_KEMIP_INT, ki_add_path_received_user,
+		{ SR_KEMIP_STR, SR_KEMIP_NONE, SR_KEMIP_NONE,
+			SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE }
+	},
+	{ str_init("path"), str_init("add_path_received_user_params"),
+		SR_KEMIP_INT, ki_add_path_received_user_params,
+		{ SR_KEMIP_STR, SR_KEMIP_STR, SR_KEMIP_NONE,
+			SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE }
+	},
+	{ {0, 0}, {0, 0}, 0, NULL, { 0, 0, 0, 0, 0, 0 } }
+};
+/* clang-format on */
+
+/**
+ *
+ */
+int mod_register(char *path, int *dlflags, void *p1, void *p2)
+{
+	sr_kemi_modules_add(sr_kemi_path_exports);
 	return 0;
 }

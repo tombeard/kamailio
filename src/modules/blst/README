@@ -137,17 +137,19 @@ if (msg_status==503){ # blacklist 503 source for Retry-After seconds
      * 0x04 - connect failed (TCP, TLS or SCTP).
      * 0x08 - ICMP error (not currently used).
      * 0x10 - SIP transaction timeout.
-     * 0x20 - 503 reply (statefull mode only). For more details see
+     * 0x20 - 503 reply (stateful mode only). For more details see
        tmblst_503.
 
 Note
 
    TCP and TLS send and connect errors are handled per connection and not
-   per message. The connection blacklist ignore flags are inherithed from
+   per message. The connection blacklist ignore flags are inherited from
    the message that caused the connection establishment.
 
    Example 1.5. blst_set_ignore usage
+...
     blst_set_ignore(6); # ignore send and connect errors
+...
 
 2.6.  blst_rpl_set_ignore([flags])
 
@@ -161,7 +163,9 @@ Note
    See also blst_set_ignore.
 
    Example 1.6. blst_clear_ignore usage
+...
     blst_clear_ignore(4); # ignore connect errors
+...
 
 2.8.  blst_rpl_clear_ignore([flags])
 

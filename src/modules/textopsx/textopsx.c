@@ -38,6 +38,7 @@
 #include "../../core/parser/parse_hname2.h"
 #include "../../core/select.h"
 #include "../../core/select_buf.h"
+#include "../../core/kemi.h"
 
 
 #include "api.h"
@@ -79,50 +80,51 @@ extern select_row_t sel_declaration[];
 /* cfg functions */
 /* clag-format off */
 static cmd_export_t cmds[] = {
-		{"msg_apply_changes", (cmd_function)msg_apply_changes_f, 0, 0,
-				REQUEST_ROUTE | ONREPLY_ROUTE},
-		{"change_reply_status", change_reply_status_f, 2,
-				change_reply_status_fixup, ONREPLY_ROUTE},
-		{"remove_body", (cmd_function)w_remove_body_f, 0, 0, ANY_ROUTE},
-		{"keep_hf", (cmd_function)w_keep_hf_f, 0, fixup_regexp_null, ANY_ROUTE},
-		{"keep_hf", (cmd_function)w_keep_hf_f, 1, fixup_regexp_null, ANY_ROUTE},
-		{"fnmatch", (cmd_function)w_fnmatch2_f, 2, fixup_fnmatch, ANY_ROUTE},
-		{"fnmatch", (cmd_function)w_fnmatch3_f, 3, fixup_fnmatch, ANY_ROUTE},
+	{"msg_apply_changes", (cmd_function)msg_apply_changes_f, 0, 0, 0,
+			REQUEST_ROUTE | ONREPLY_ROUTE},
+	{"change_reply_status", change_reply_status_f, 2,
+			change_reply_status_fixup, 0, ONREPLY_ROUTE},
+	{"remove_body", (cmd_function)w_remove_body_f, 0, 0, 0, ANY_ROUTE},
+	{"keep_hf", (cmd_function)w_keep_hf_f, 0, fixup_regexp_null, 0, ANY_ROUTE},
+	{"keep_hf", (cmd_function)w_keep_hf_f, 1, fixup_regexp_null, 0, ANY_ROUTE},
+	{"fnmatch", (cmd_function)w_fnmatch2_f, 2, fixup_fnmatch, 0, ANY_ROUTE},
+	{"fnmatch", (cmd_function)w_fnmatch3_f, 3, fixup_fnmatch, 0, ANY_ROUTE},
+	{"append_hf_value", insupddel_hf_value_f, 2, append_hf_value_fixup, 0,
+			REQUEST_ROUTE | ONREPLY_ROUTE | FAILURE_ROUTE | BRANCH_ROUTE},
+	{"insert_hf_value", insupddel_hf_value_f, 2, insert_hf_value_fixup, 0,
+			REQUEST_ROUTE | ONREPLY_ROUTE | FAILURE_ROUTE | BRANCH_ROUTE},
+	{"remove_hf_value", insupddel_hf_value_f, 1, remove_hf_value_fixup, 0,
+			REQUEST_ROUTE | ONREPLY_ROUTE | FAILURE_ROUTE | BRANCH_ROUTE},
+	{"assign_hf_value", insupddel_hf_value_f, 2, assign_hf_value_fixup, 0,
+			REQUEST_ROUTE | ONREPLY_ROUTE | FAILURE_ROUTE | BRANCH_ROUTE},
+	{"remove_hf_value2", insupddel_hf_value_f, 1, remove_hf_value2_fixup, 0,
+			REQUEST_ROUTE | ONREPLY_ROUTE | FAILURE_ROUTE | BRANCH_ROUTE},
+	{"assign_hf_value2", insupddel_hf_value_f, 2, assign_hf_value2_fixup, 0,
+			REQUEST_ROUTE | ONREPLY_ROUTE | FAILURE_ROUTE | BRANCH_ROUTE},
+	{"include_hf_value", incexc_hf_value_f, 2, include_hf_value_fixup, 0,
+			REQUEST_ROUTE | ONREPLY_ROUTE | FAILURE_ROUTE | BRANCH_ROUTE},
+	{"exclude_hf_value", incexc_hf_value_f, 2, exclude_hf_value_fixup, 0,
+			REQUEST_ROUTE | ONREPLY_ROUTE | FAILURE_ROUTE | BRANCH_ROUTE},
+	{"hf_value_exists", incexc_hf_value_f, 2, hf_value_exists_fixup, 0,
+			REQUEST_ROUTE | ONREPLY_ROUTE | FAILURE_ROUTE | BRANCH_ROUTE},
 
-		{"append_hf_value", insupddel_hf_value_f, 2, append_hf_value_fixup,
-				REQUEST_ROUTE | ONREPLY_ROUTE | FAILURE_ROUTE | BRANCH_ROUTE},
-		{"insert_hf_value", insupddel_hf_value_f, 2, insert_hf_value_fixup,
-				REQUEST_ROUTE | ONREPLY_ROUTE | FAILURE_ROUTE | BRANCH_ROUTE},
-		{"remove_hf_value", insupddel_hf_value_f, 1, remove_hf_value_fixup,
-				REQUEST_ROUTE | ONREPLY_ROUTE | FAILURE_ROUTE | BRANCH_ROUTE},
-		{"assign_hf_value", insupddel_hf_value_f, 2, assign_hf_value_fixup,
-				REQUEST_ROUTE | ONREPLY_ROUTE | FAILURE_ROUTE | BRANCH_ROUTE},
-		{"remove_hf_value2", insupddel_hf_value_f, 1, remove_hf_value2_fixup,
-				REQUEST_ROUTE | ONREPLY_ROUTE | FAILURE_ROUTE | BRANCH_ROUTE},
-		{"assign_hf_value2", insupddel_hf_value_f, 2, assign_hf_value2_fixup,
-				REQUEST_ROUTE | ONREPLY_ROUTE | FAILURE_ROUTE | BRANCH_ROUTE},
-		{"include_hf_value", incexc_hf_value_f, 2, include_hf_value_fixup,
-				REQUEST_ROUTE | ONREPLY_ROUTE | FAILURE_ROUTE | BRANCH_ROUTE},
-		{"exclude_hf_value", incexc_hf_value_f, 2, exclude_hf_value_fixup,
-				REQUEST_ROUTE | ONREPLY_ROUTE | FAILURE_ROUTE | BRANCH_ROUTE},
-		{"hf_value_exists", incexc_hf_value_f, 2, hf_value_exists_fixup,
-				REQUEST_ROUTE | ONREPLY_ROUTE | FAILURE_ROUTE | BRANCH_ROUTE},
+	{"bind_textopsx", (cmd_function)bind_textopsx, 1, 0, 0, ANY_ROUTE},
 
-		{"bind_textopsx", (cmd_function)bind_textopsx, 1, 0, ANY_ROUTE},
-
-
-		{0, 0, 0, 0, 0}};
+	{0, 0, 0, 0, 0, 0}
+};
 
 /* module exports structure */
 struct module_exports exports = {
-		"textopsx", cmds, /* cfg functions */
-		0,				  /* RPC methods */
-		0,				  /* cfg parameters */
-		mod_init,		  /* initialization function */
-		0,				  /* response function */
-		0,				  /* destroy function */
-		0,				  /* on_cancel function */
-		0				  /* per-child init function */
+	"textopsx",		/* module name */
+	DEFAULT_DLFLAGS,	/* dlopen flags */
+	cmds,			/* exported cfg functions */
+	0,				/* exported cfg parameters */
+	0,				/* exported RPC methods */
+	0,				/* exported pseudo-variables */
+	0,				/* response handling function */
+	mod_init,		/* module init function */
+	0,				/* per-child init function */
+	0,				/* destroy function */
 };
 /* clag-format on */
 
@@ -142,92 +144,54 @@ static int mod_init(void)
 /**
  *
  */
-static int msg_apply_changes_f(sip_msg_t *msg, char *str1, char *str2)
+static int ki_msg_update_buffer(sip_msg_t *msg, str *obuf)
 {
-	struct dest_info dst;
-	str obuf;
-	sip_msg_t tmp;
-
-	if(msg->first_line.type != SIP_REPLY && get_route_type() != REQUEST_ROUTE) {
-		LM_ERR("invalid usage - not in request route\n");
+	if(obuf==NULL || obuf->s==NULL || obuf->len<=0) {
+		LM_ERR("invalid buffer parameter\n");
 		return -1;
 	}
 
-	init_dest_info(&dst);
-	dst.proto = PROTO_UDP;
-	if(msg->first_line.type == SIP_REPLY) {
-		obuf.s = generate_res_buf_from_sip_res(
-				msg, (unsigned int *)&obuf.len, BUILD_NO_VIA1_UPDATE);
-	} else {
-		if(msg->msg_flags & FL_RR_ADDED) {
-			LM_ERR("cannot apply msg changes after adding record-route"
-				   " header - it breaks conditional 2nd header\n");
-			return -1;
-		}
-		obuf.s = build_req_buf_from_sip_req(msg, (unsigned int *)&obuf.len,
-				&dst,
-				BUILD_NO_PATH | BUILD_NO_LOCAL_VIA | BUILD_NO_VIA1_UPDATE);
-	}
-	if(obuf.s == NULL) {
-		LM_ERR("couldn't update msg buffer content\n");
+	if(obuf->len >= BUF_SIZE) {
+		LM_ERR("new buffer is too large (%d)\n", obuf->len);
 		return -1;
 	}
-	if(obuf.len >= BUF_SIZE) {
-		LM_ERR("new buffer overflow (%d)\n", obuf.len);
-		pkg_free(obuf.s);
-		return -1;
-	}
-	/* temporary copy */
-	memcpy(&tmp, msg, sizeof(sip_msg_t));
 
-	/* reset dst uri and path vector to avoid freeing - restored later */
-	if(msg->dst_uri.s != NULL) {
-		msg->dst_uri.s = NULL;
-		msg->dst_uri.len = 0;
-	}
-	if(msg->path_vec.s != NULL) {
-		msg->path_vec.s = NULL;
-		msg->path_vec.len = 0;
-	}
-
-	/* free old msg structure */
-	free_sip_msg(msg);
-	memset(msg, 0, sizeof(sip_msg_t));
-
-	/* restore msg fields */
-	msg->buf = tmp.buf;
-	msg->id = tmp.id;
-	msg->rcv = tmp.rcv;
-	msg->set_global_address = tmp.set_global_address;
-	msg->set_global_port = tmp.set_global_port;
-	msg->flags = tmp.flags;
-	msg->msg_flags = tmp.msg_flags;
-	msg->hash_index = tmp.hash_index;
-	msg->force_send_socket = tmp.force_send_socket;
-	msg->fwd_send_flags = tmp.fwd_send_flags;
-	msg->rpl_send_flags = tmp.rpl_send_flags;
-	msg->dst_uri = tmp.dst_uri;
-	msg->path_vec = tmp.path_vec;
-
-	memcpy(msg->buf, obuf.s, obuf.len);
-	msg->len = obuf.len;
-	msg->buf[msg->len] = '\0';
-
-	/* free new buffer - copied in the static buffer from old sip_msg_t */
-	pkg_free(obuf.s);
-
-	/* reparse the message */
-	LM_DBG("SIP message content updated - reparsing\n");
-	if(parse_msg(msg->buf, msg->len, msg) != 0) {
-		LM_ERR("parsing new sip message failed [[%.*s]]\n", msg->len, msg->buf);
-		/* exit config execution - sip_msg_t structure is no longer
-		 * valid/safe for config */
-		return 0;
-	}
-
-	return 1;
+	return sip_msg_update_buffer(msg, obuf);
 }
 
+/**
+ *
+ */
+static int ki_msg_set_buffer(sip_msg_t *msg, str *obuf)
+{
+	if(msg->first_line.type != SIP_REPLY && get_route_type() != REQUEST_ROUTE) {
+		LM_ERR("invalid usage - not in request route or a reply\n");
+		return -1;
+	}
+
+	return ki_msg_update_buffer(msg, obuf);
+}
+
+/**
+ *
+ */
+static int ki_msg_apply_changes(sip_msg_t *msg)
+{
+	if(msg->first_line.type != SIP_REPLY && get_route_type() != REQUEST_ROUTE) {
+		LM_ERR("invalid usage - not in request route or a reply\n");
+		return -1;
+	}
+
+	return sip_msg_apply_changes(msg);
+}
+
+/**
+ *
+ */
+static int msg_apply_changes_f(sip_msg_t *msg, char *str1, char *str2)
+{
+	return ki_msg_apply_changes(msg);
+}
 
 /**
  *
@@ -245,18 +209,13 @@ static int change_reply_status_fixup(void **param, int param_no)
 /**
  *
  */
-static int change_reply_status_f(
-		struct sip_msg *msg, char *_code, char *_reason)
+static int ki_change_reply_status(sip_msg_t *msg, int code, str *reason)
 {
-	int code;
-	str reason;
 	struct lump *l;
 	char *ch;
 
-	if(get_int_fparam(&code, msg, (fparam_t *)_code)
-			|| get_str_fparam(&reason, msg, (fparam_t *)_reason)
-			|| (reason.len == 0)) {
-		LM_ERR("cannot get parameter\n");
+	if(reason==NULL || (reason->len<=0)) {
+		LM_ERR("invalid reason parameter\n");
 		return -1;
 	}
 
@@ -287,14 +246,14 @@ static int change_reply_status_f(
 		return -1;
 	}
 	/* clone the reason phrase, the lumps need to be pkg allocated */
-	ch = (char *)pkg_malloc(reason.len);
+	ch = (char *)pkg_malloc(reason->len);
 	if(!ch) {
 		LM_ERR("Not enough memory\n");
 		return -1;
 	}
-	memcpy(ch, reason.s, reason.len);
-	if(insert_new_lump_after(l, ch, reason.len, 0) == 0) {
-		LM_ERR("failed to add new lump: %.*s\n", reason.len, ch);
+	memcpy(ch, reason->s, reason->len);
+	if(insert_new_lump_after(l, ch, reason->len, 0) == 0) {
+		LM_ERR("failed to add new lump: %.*s\n", reason->len, ch);
 		pkg_free(ch);
 		return -1;
 	}
@@ -306,7 +265,25 @@ static int change_reply_status_f(
 /**
  *
  */
-static int w_remove_body_f(struct sip_msg *msg, char *p1, char *p2)
+static int change_reply_status_f(
+		struct sip_msg *msg, char *_code, char *_reason)
+{
+	int code;
+	str reason;
+
+	if(get_int_fparam(&code, msg, (fparam_t *)_code)
+			|| get_str_fparam(&reason, msg, (fparam_t *)_reason)) {
+		LM_ERR("cannot get parameters\n");
+		return -1;
+	}
+	return ki_change_reply_status(msg, code, &reason);
+}
+
+
+/**
+ *
+ */
+static int ki_remove_body(struct sip_msg *msg)
 {
 	str body = {0, 0};
 
@@ -332,22 +309,27 @@ static int w_remove_body_f(struct sip_msg *msg, char *p1, char *p2)
 /**
  *
  */
-static int w_keep_hf_f(struct sip_msg *msg, char *key, char *foo)
+static int w_remove_body_f(struct sip_msg *msg, char *p1, char *p2)
+{
+	return ki_remove_body(msg);
+}
+
+
+/**
+ *
+ */
+static int keep_hf_helper(sip_msg_t *msg, regex_t *re)
 {
 	struct hdr_field *hf;
-	regex_t *re;
 	regmatch_t pmatch;
 	char c;
 	struct lump *l;
 
-	if(key) {
-		re = (regex_t *)key;
-	} else {
-		re = NULL;
-	}
-
 	/* we need to be sure we have seen all HFs */
-	parse_headers(msg, HDR_EOH_F, 0);
+	if(parse_headers(msg, HDR_EOH_F, 0) == -1) {
+		LM_ERR("Error while parsing message\n");
+		return -1;
+	}
 	for(hf = msg->headers; hf; hf = hf->next) {
 		switch(hf->type) {
 			case HDR_FROM_T:
@@ -395,10 +377,58 @@ static int w_keep_hf_f(struct sip_msg *msg, char *key, char *foo)
 	return -1;
 }
 
+
 /**
  *
  */
-static int w_fnmatch(str *val, str *match, str *flags)
+static int w_keep_hf_f(struct sip_msg *msg, char *key, char *foo)
+{
+	regex_t *re;
+
+	if(key) {
+		re = (regex_t *)key;
+	} else {
+		re = NULL;
+	}
+	return keep_hf_helper(msg, re);
+}
+
+
+/**
+ *
+ */
+static int ki_keep_hf(sip_msg_t *msg)
+{
+	return keep_hf_helper(msg, NULL);
+}
+
+
+/**
+ *
+ */
+static int ki_keep_hf_re(sip_msg_t *msg, str *sre)
+{
+	regex_t re;
+	int ret;
+
+	if(sre==NULL || sre->len<=0)
+		return keep_hf_helper(msg, NULL);
+
+	memset(&re, 0, sizeof(regex_t));
+	if (regcomp(&re, sre->s, REG_EXTENDED|REG_ICASE|REG_NEWLINE)!=0) {
+		LM_ERR("failed to compile regex: %.*s\n", sre->len, sre->s);
+		return -1;
+	}
+	ret = keep_hf_helper(msg, &re);
+	regfree(&re);
+	return ret;
+}
+
+
+/**
+ *
+ */
+static int w_fnmatch_ex(str *val, str *match, str *flags)
 {
 	int i;
 	i = 0;
@@ -423,7 +453,7 @@ static int w_fnmatch2_f(sip_msg_t *msg, char *val, char *match)
 		LM_ERR("invalid parameters");
 		return -1;
 	}
-	if(w_fnmatch(&sval, &smatch, NULL) < 0)
+	if(w_fnmatch_ex(&sval, &smatch, NULL) < 0)
 		return -1;
 	return 1;
 }
@@ -442,9 +472,25 @@ static int w_fnmatch3_f(sip_msg_t *msg, char *val, char *match, char *flags)
 		LM_ERR("invalid parameters");
 		return -1;
 	}
-	if(w_fnmatch(&sval, &smatch, &sflags) < 0)
+	if(w_fnmatch_ex(&sval, &smatch, &sflags) < 0)
 		return -1;
 	return 1;
+}
+
+/**
+ *
+ */
+static int ki_fnmatch(sip_msg_t *msg, str *val, str *match)
+{
+	return w_fnmatch_ex(val, match, NULL);
+}
+
+/**
+ *
+ */
+static int ki_fnmatch_ex(sip_msg_t *msg, str *val, str *match, str *flags)
+{
+	return w_fnmatch_ex(val, match, flags);
 }
 
 /**
@@ -634,6 +680,18 @@ static int fixup_hname_str(void **param, int param_no)
 	return 0;
 }
 
+static int fixup_free_hname_str(void **param, int param_no)
+{
+	if(param_no == 1) {
+		struct hname_data *h;
+		h = (struct hname_data *)(*param);
+		pkg_free(h);
+		return 0;
+	} else if(param_no == 2) {
+		return fixup_free_spve_null(param, 1);
+	}
+	return 0;
+}
 
 static int find_next_hf(
 		struct sip_msg *msg, struct hname_data *hname, struct hdr_field **hf)
@@ -1037,6 +1095,47 @@ static int delete_value_lump(
 	return 1;
 }
 
+static int ki_modify_hf(sip_msg_t *msg, str *hexp, str *val,
+	fixup_function fixf, cmd_function cmdf)
+{
+	int ret;
+	char *s1 = NULL;
+	char *s2 = NULL;
+	void *p1 = NULL;
+	void *p2 = NULL;
+
+	s1 = as_asciiz(hexp);
+	p1 = s1;
+	if(fixf(&p1, 1)!=0) {
+		LM_ERR("failed to fix first parameter\n");
+		p1 = NULL;
+		goto error;
+	}
+	if(val && val->s!=0 && val->len>0) {
+		s2 = as_asciiz(val);
+		p2 = s2;
+		if(fixf(&p2, 2)!=0) {
+			LM_ERR("failed to fix second parameter\n");
+			p2 = NULL;
+			goto error;
+		}
+	}
+
+	ret = cmdf(msg, (char*)p1, (char*)p2);
+
+	if(p2!=NULL) fixup_free_hname_str(&p2, 2);
+	fixup_free_hname_str(&p1, 1);
+	if(s2!=NULL) pkg_free(s2);
+	pkg_free(s1);
+	return ret;
+
+error:
+	if(p1!=NULL) fixup_free_hname_str(&p1, 1);
+	if(s2!=NULL) pkg_free(s2);
+	if(s1!=NULL) pkg_free(s1);
+	return -1;
+}
+
 static int incexc_hf_value_str_f(struct sip_msg *msg, char *_hname, str *_pval)
 {
 	struct hname_data *hname = (void *)_hname;
@@ -1136,6 +1235,24 @@ static int incexc_hf_value_f(struct sip_msg *msg, char *_hname, char *_val)
 INCEXC_HF_VALUE_FIXUP(include_hf_value_fixup, hnoInclude)
 INCEXC_HF_VALUE_FIXUP(exclude_hf_value_fixup, hnoExclude)
 INCEXC_HF_VALUE_FIXUP(hf_value_exists_fixup, hnoIsIncluded)
+
+static int ki_include_hf_value(sip_msg_t *msg, str *hexp, str *val)
+{
+	return ki_modify_hf(msg, hexp, val, include_hf_value_fixup,
+			incexc_hf_value_f);
+}
+
+static int ki_exclude_hf_value(sip_msg_t *msg, str *hexp, str *val)
+{
+	return ki_modify_hf(msg, hexp, val, exclude_hf_value_fixup,
+			incexc_hf_value_f);
+}
+
+static int ki_hf_value_exists(sip_msg_t *msg, str *hexp, str *val)
+{
+	return ki_modify_hf(msg, hexp, val, hf_value_exists_fixup,
+			incexc_hf_value_f);
+}
 
 static void get_uri_and_skip_until_params(str *param_area, str *name, str *uri)
 {
@@ -1507,6 +1624,12 @@ static int append_hf_value_fixup(void **param, int param_no)
 	return 0;
 }
 
+static int ki_append_hf_value(sip_msg_t *msg, str *hexp, str *val)
+{
+	return ki_modify_hf(msg, hexp, val, append_hf_value_fixup,
+			insupddel_hf_value_f);
+}
+
 static int insert_hf_value_fixup(void **param, int param_no)
 {
 	int res = fixup_hname_str(param, param_no);
@@ -1533,6 +1656,12 @@ static int insert_hf_value_fixup(void **param, int param_no)
 	return 0;
 }
 
+static int ki_insert_hf_value(sip_msg_t *msg, str *hexp, str *val)
+{
+	return ki_modify_hf(msg, hexp, val, insert_hf_value_fixup,
+			insupddel_hf_value_f);
+}
+
 static int remove_hf_value_fixup(void **param, int param_no)
 {
 	int res = fixup_hname_str(param, param_no);
@@ -1551,6 +1680,12 @@ static int remove_hf_value_fixup(void **param, int param_no)
 		((struct hname_data *)*param)->oper = hnoRemove;
 	}
 	return 0;
+}
+
+static int ki_remove_hf_value(sip_msg_t *msg, str *hexp)
+{
+	return ki_modify_hf(msg, hexp, NULL, remove_hf_value_fixup,
+			insupddel_hf_value_f);
 }
 
 static int assign_hf_value_fixup(void **param, int param_no)
@@ -1577,6 +1712,12 @@ static int assign_hf_value_fixup(void **param, int param_no)
 	return 0;
 }
 
+static int ki_assign_hf_value(sip_msg_t *msg, str *hexp, str *val)
+{
+	return ki_modify_hf(msg, hexp, val, assign_hf_value_fixup,
+			insupddel_hf_value_f);
+}
+
 static int remove_hf_value2_fixup(void **param, int param_no)
 {
 	int res = remove_hf_value_fixup(param, param_no);
@@ -1586,6 +1727,12 @@ static int remove_hf_value2_fixup(void **param, int param_no)
 		((struct hname_data *)*param)->oper = hnoRemove2;
 	}
 	return 0;
+}
+
+static int ki_remove_hf_value2(sip_msg_t *msg, str *hexp, str *val)
+{
+	return ki_modify_hf(msg, hexp, val, remove_hf_value2_fixup,
+			insupddel_hf_value_f);
 }
 
 static int assign_hf_value2_fixup(void **param, int param_no)
@@ -1599,6 +1746,11 @@ static int assign_hf_value2_fixup(void **param, int param_no)
 	return 0;
 }
 
+static int ki_assign_hf_value2(sip_msg_t *msg, str *hexp, str *val)
+{
+	return ki_modify_hf(msg, hexp, val, assign_hf_value2_fixup,
+			insupddel_hf_value_f);
+}
 
 /* select implementation */
 static int sel_hf_value(str *res, select_t *s, struct sip_msg *msg)
@@ -1636,8 +1788,10 @@ static int sel_hf_value_name(str *res, select_t *s, struct sip_msg *msg)
 			hname->hname = s->params[1].v.s;
 			parse_hname2(buf, buf + i, &hdr);
 
-			if(hdr.type == HDR_ERROR_T)
+			if(hdr.type == HDR_ERROR_T) {
+				pkg_free(hname);
 				return E_CFG;
+			}
 			hname->htype = hdr.type;
 
 			s->params[1].v.p = hname;
@@ -2021,3 +2175,107 @@ select_row_t sel_declaration[] = {
 
 		{NULL, SEL_PARAM_INT, STR_NULL, NULL, 0}
 };
+
+/**
+ *
+ */
+/* clang-format off */
+static sr_kemi_t sr_kemi_textopsx_exports[] = {
+	{ str_init("textopsx"), str_init("msg_apply_changes"),
+		SR_KEMIP_INT, ki_msg_apply_changes,
+		{ SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE,
+			SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE }
+	},
+	{ str_init("textopsx"), str_init("msg_set_buffer"),
+		SR_KEMIP_INT, ki_msg_set_buffer,
+		{ SR_KEMIP_STR, SR_KEMIP_NONE, SR_KEMIP_NONE,
+			SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE }
+	},
+	{ str_init("textopsx"), str_init("change_reply_status"),
+		SR_KEMIP_INT, ki_change_reply_status,
+		{ SR_KEMIP_INT, SR_KEMIP_STR, SR_KEMIP_NONE,
+			SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE }
+	},
+	{ str_init("textopsx"), str_init("remove_body"),
+		SR_KEMIP_INT, ki_remove_body,
+		{ SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE,
+			SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE }
+	},
+	{ str_init("textopsx"), str_init("keep_hf"),
+		SR_KEMIP_INT, ki_keep_hf,
+		{ SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE,
+			SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE }
+	},
+	{ str_init("textopsx"), str_init("keep_hf_re"),
+		SR_KEMIP_INT, ki_keep_hf_re,
+		{ SR_KEMIP_STR, SR_KEMIP_NONE, SR_KEMIP_NONE,
+			SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE }
+	},
+	{ str_init("textopsx"), str_init("fnmatch"),
+		SR_KEMIP_INT, ki_fnmatch,
+		{ SR_KEMIP_STR, SR_KEMIP_STR, SR_KEMIP_NONE,
+			SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE }
+	},
+	{ str_init("textopsx"), str_init("fnmatch_ex"),
+		SR_KEMIP_INT, ki_fnmatch_ex,
+		{ SR_KEMIP_STR, SR_KEMIP_STR, SR_KEMIP_STR,
+			SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE }
+	},
+	{ str_init("textopsx"), str_init("append_hf_value"),
+		SR_KEMIP_INT, ki_append_hf_value,
+		{ SR_KEMIP_STR, SR_KEMIP_STR, SR_KEMIP_NONE,
+			SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE }
+	},
+	{ str_init("textopsx"), str_init("insert_hf_value"),
+		SR_KEMIP_INT, ki_insert_hf_value,
+		{ SR_KEMIP_STR, SR_KEMIP_STR, SR_KEMIP_NONE,
+			SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE }
+	},
+	{ str_init("textopsx"), str_init("assign_hf_value"),
+		SR_KEMIP_INT, ki_assign_hf_value,
+		{ SR_KEMIP_STR, SR_KEMIP_STR, SR_KEMIP_NONE,
+			SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE }
+	},
+	{ str_init("textopsx"), str_init("assign_hf_value2"),
+		SR_KEMIP_INT, ki_assign_hf_value2,
+		{ SR_KEMIP_STR, SR_KEMIP_STR, SR_KEMIP_NONE,
+			SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE }
+	},
+	{ str_init("textopsx"), str_init("remove_hf_value"),
+		SR_KEMIP_INT, ki_remove_hf_value,
+		{ SR_KEMIP_STR, SR_KEMIP_NONE, SR_KEMIP_NONE,
+			SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE }
+	},
+	{ str_init("textopsx"), str_init("remove_hf_value2"),
+		SR_KEMIP_INT, ki_remove_hf_value2,
+		{ SR_KEMIP_STR, SR_KEMIP_STR, SR_KEMIP_NONE,
+			SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE }
+	},
+	{ str_init("textopsx"), str_init("include_hf_value"),
+		SR_KEMIP_INT, ki_include_hf_value,
+		{ SR_KEMIP_STR, SR_KEMIP_STR, SR_KEMIP_NONE,
+			SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE }
+	},
+	{ str_init("textopsx"), str_init("exclude_hf_value"),
+		SR_KEMIP_INT, ki_exclude_hf_value,
+		{ SR_KEMIP_STR, SR_KEMIP_STR, SR_KEMIP_NONE,
+			SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE }
+	},
+	{ str_init("textopsx"), str_init("hf_value_exists"),
+		SR_KEMIP_INT, ki_hf_value_exists,
+		{ SR_KEMIP_STR, SR_KEMIP_STR, SR_KEMIP_NONE,
+			SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE }
+	},
+
+	{ {0, 0}, {0, 0}, 0, NULL, { 0, 0, 0, 0, 0, 0 } }
+};
+/* clang-format on */
+
+/**
+ *
+ */
+int mod_register(char *path, int *dlflags, void *p1, void *p2)
+{
+	sr_kemi_modules_add(sr_kemi_textopsx_exports);
+	return 0;
+}

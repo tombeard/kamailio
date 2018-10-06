@@ -1,4 +1,4 @@
-/* 
+/*
  * Various URI related functions
  *
  * Copyright (C) 2001-2003 FhG Fokus
@@ -15,8 +15,8 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License 
- * along with this program; if not, write to the Free Software 
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  *
  */
@@ -31,6 +31,7 @@
 #include "../../core/error.h"
 #include "../../core/mem/mem.h"
 #include "../../core/mod_fix.h"
+#include "../../core/kemi.h"
 #include "uri_db.h"
 #include "checks.h"
 
@@ -71,6 +72,8 @@ int use_domain = 0;        /* Should does_uri_exist honor the domain part ? */
 
 static int fixup_exist(void** param, int param_no);
 
+static int w_check_uri1(struct sip_msg* _m, char* _uri, char* _s);
+
 /*
  * Exported functions
  */
@@ -79,8 +82,10 @@ static cmd_export_t cmds[] = {
 		REQUEST_ROUTE},
 	{"check_from",     (cmd_function)check_from,     0, 0, 0,
 		REQUEST_ROUTE},
-	{"check_uri",      (cmd_function)check_uri,      1, fixup_spve_null, 0,
-        REQUEST_ROUTE},
+	{"check_uri",      (cmd_function)w_check_uri1,   1, fixup_spve_null, 0,
+		REQUEST_ROUTE},
+	{"check_uri",      (cmd_function)check_uri,      3, fixup_spve_all, 0,
+		REQUEST_ROUTE},
 	{"does_uri_exist", (cmd_function)does_uri_exist, 0, 0, fixup_exist,
 		REQUEST_ROUTE|LOCAL_ROUTE},
 	{0, 0, 0, 0, 0, 0}
@@ -106,18 +111,16 @@ static param_export_t params[] = {
  * Module interface
  */
 struct module_exports exports = {
-	"uri_db",
+	"uri_db",   /* module name */
 	DEFAULT_DLFLAGS, /* dlopen flags */
-	cmds,      /* Exported functions */
-	params,    /* Exported parameters */
-	0,         /* exported statistics */
-	0 ,        /* exported MI functions */
-	0,         /* exported pseudo-variables */
-	0,         /* extra processes */
-	mod_init,  /* module initialization function */
-	0,         /* response function */
-	destroy,   /* destroy function */
-	child_init /* child initialization function */
+	cmds,       /* exported functions */
+	params,     /* exported parameters */
+	0 ,         /* exported rpc functions */
+	0,          /* exported pseudo-variables */
+	0,          /* response handling function */
+	mod_init,   /* module init function */
+	child_init, /* child init function */
+	destroy     /* module destroy function */
 };
 
 
@@ -191,5 +194,52 @@ static int fixup_exist(void** param, int param_no)
 		LM_ERR("configuration error - does_uri_exist() called with no database URL!\n");
 		return E_CFG;
 	}
+	return 0;
+}
+
+
+static int w_check_uri1(struct sip_msg* msg, char* uri, char* _s)
+{
+	return check_uri(msg, uri, NULL, NULL);
+}
+
+/**
+ *
+ */
+/* clang-format off */
+static sr_kemi_t sr_kemi_uri_db_exports[] = {
+	{ str_init("uri_db"), str_init("check_from"),
+		SR_KEMIP_INT, ki_check_from,
+		{ SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE,
+			SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE }
+	},
+	{ str_init("uri_db"), str_init("check_to"),
+		SR_KEMIP_INT, ki_check_to,
+		{ SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE,
+			SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE }
+	},
+	{ str_init("uri_db"), str_init("does_uri_exist"),
+		SR_KEMIP_INT, ki_does_uri_exist,
+		{ SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE,
+			SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE }
+	},
+	{ str_init("uri_db"), str_init("check_uri"),
+		SR_KEMIP_INT, ki_check_uri,
+		{ SR_KEMIP_STR, SR_KEMIP_NONE, SR_KEMIP_NONE,
+			SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE }
+	},
+	{ str_init("uri_db"), str_init("check_uri_realm"),
+		SR_KEMIP_INT, ki_check_uri_realm,
+		{ SR_KEMIP_STR, SR_KEMIP_STR, SR_KEMIP_STR,
+			SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE }
+	},
+
+	{ {0, 0}, {0, 0}, 0, NULL, { 0, 0, 0, 0, 0, 0 } }
+};
+/* clang-format on */
+
+int mod_register(char *path, int *dlflags, void *p1, void *p2)
+{
+	sr_kemi_modules_add(sr_kemi_uri_db_exports);
 	return 0;
 }

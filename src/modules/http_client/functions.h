@@ -16,8 +16,8 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License 
- * along with this program; if not, write to the Free Software 
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  *
  */
@@ -37,18 +37,20 @@
 
 /*! Use predefined connection to run HTTP get or post
  */
-int curl_con_query_url(struct sip_msg* _m, const str *connection, const str* _url, str* _result, const char *contenttype, const str* _post);
+int curl_con_query_url(struct sip_msg *_m, const str *connection,
+		const str *_url, str *_result, const char *contenttype,
+		const str *_post);
 
 /*! Get redirect URL from last connection pkg memory storage */
-int curl_get_redirect(struct sip_msg* _m, const str *connection, str* result);
+int curl_get_redirect(struct sip_msg *_m, const str *connection, str *result);
 
 
-
-/* 
- * Performs http_query and saves possible result (first body line of reply)
- * to pvar.
+/*
+ * Performs http_client_query and saves possible result
+ * (first body line of reply) to pvar.
  */
-int http_query(struct sip_msg* _m, char* _url, str* _dst, char* _post);
+int http_client_query(
+		struct sip_msg *_m, char *_url, str *_dst, char *_post, char *_hdrs);
 
 
 char *http_get_content_type(const str *connection);

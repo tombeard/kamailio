@@ -1,6 +1,7 @@
 # Kamailio - The Open Source SIP Server
 
 [![Build Status](https://travis-ci.org/kamailio/kamailio.svg?branch=master)](https://travis-ci.org/kamailio/kamailio)
+[![Code Triage Badge](https://www.codetriage.com/kamailio/kamailio/badges/users.svg)](https://www.codetriage.com/kamailio/kamailio)
 
 Project Website:
 
@@ -83,11 +84,11 @@ To report a bug or make a request for new features, use the Issues Page in the K
 
 Mailing list for discussions regarding stable versions of Kamailio:
 
-  * **sr-users (at) lists.sip-router.org** - [sr-users web page](https://lists.sip-router.org/cgi-bin/mailman/listinfo/sr-users)
+  * **sr-users (at) lists.kamailio.org** - [sr-users web page](https://lists.kamailio.org/cgi-bin/mailman/listinfo/sr-users)
 
 Mailing list for discussions regarding the development of Kamailio and the state of master (devel) branch:
 
-  * **sr-dev (at) lists.sip-router.org** - [sr-dev web page](https://lists.sip-router.org/cgi-bin/mailman/listinfo/sr-dev)
+  * **sr-dev (at) lists.kamailio.org** - [sr-dev web page](https://lists.kamailio.org/cgi-bin/mailman/listinfo/sr-dev)
 
 Mailing list for discussions with commercial purpose:
 
@@ -109,7 +110,7 @@ An open IRC discussion channel is managed by the community:
 News:
 
   * https://www.kamailio.org/w/category/news/
-  * Twitter @kamailioproject
+  * Twitter @kamailio
 
 ## Travis-CI - Testing Build Environment
 

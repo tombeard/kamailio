@@ -47,6 +47,8 @@ int db_mode = 0;  /* Database usage mode: 0 = cache, 1 = no cache */
 int empty_string = 0;  /* Treat empty string as "" = 0, 1 = NULL */
 int _db_text_read_buffer_size = DEFAULT_DB_TEXT_READ_BUFFER_SIZE;
 int _db_text_max_result_rows = DEFAULT_MAX_RESULT_ROWS;
+int _dbt_delim = ':'; /* ':' is the default delim */
+str _dbt_delim_str = str_init(":"); /* ':' is the default delim */
 str dbt_default_connection = str_init("");
 
 int dbt_bind_api(db_func_t *dbb);
@@ -69,24 +71,23 @@ static param_export_t params[] = {
 	{"file_buffer_size", INT_PARAM, &_db_text_read_buffer_size},
 	{"max_result_rows", INT_PARAM, &_db_text_max_result_rows},
 	{"default_connection", PARAM_STR, &dbt_default_connection},
+	{"db_delim", PARAM_STR, &_dbt_delim_str},
 	{0, 0, 0}
 };
 
 static rpc_export_t rpc_methods[];
 
 struct module_exports exports = {
-	"db_text",
+	"db_text",       /* module name */
 	DEFAULT_DLFLAGS, /* dlopen flags */
-	cmds,     /* Exported functions */
-	params,   /* Exported parameters */
-	0,        /* exported statistics */
-	0,        /* exported MI functions */
-	0,        /* exported pseudo-variables */
-	0,        /* extra processes */
-	mod_init, /* module initialization function */
-	0,        /* response function*/
-	destroy,  /* destroy function */
-	0         /* per-child init function */
+	cmds,            /* cmd (cfg function) exports */
+	params,          /* param exports */
+	0,               /* RPC method exports */
+	0,               /* pseudo-variables exports */
+	0,               /* response handling function */
+	mod_init,        /* module init function */
+	0,               /* per-child init function */
+	destroy          /* module destroy function */
 };
 
 int mod_register(char *path, int *dlflags, void *p1, void *p2)
@@ -103,6 +104,14 @@ int mod_register(char *path, int *dlflags, void *p1, void *p2)
 
 static int mod_init(void)
 {
+	if (_dbt_delim_str.len != 1) {
+		LM_ERR("db_delim must be a character, defaulting to \":\"\n");
+		pkg_free(_dbt_delim_str.s);
+		_dbt_delim_str.s = ":";
+		_dbt_delim_str.len = 1;
+	}
+	_dbt_delim = _dbt_delim_str.s[0];
+
 	if(dbt_init_cache())
 		return -1;
 	/* return make_demo(); */

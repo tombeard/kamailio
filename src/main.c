@@ -135,6 +135,7 @@
 #include "core/dset.h"
 #include "core/timer_proc.h"
 #include "core/srapi.h"
+#include "core/receive.h"
 
 #ifdef DEBUG_DMALLOC
 #include <dmalloc.h>
@@ -161,7 +162,7 @@ Options:\n\
                   [proto:]addr_lst[:port], where proto=udp|tcp|tls|sctp, \n\
                   addr_lst= addr|(addr, addr_lst) and \n\
                   addr= host|ip_address|interface_name. \n\
-                  E.g: -l locahost, -l udp:127.0.0.1:5080, -l eth0:5062,\n\
+                  E.g: -l localhost, -l udp:127.0.0.1:5080, -l eth0:5062,\n\
                   -l \"sctp:(eth0)\", -l \"(eth0, eth1, 127.0.0.1):5065\".\n\
                   The default behaviour is to listen on all the interfaces.\n\
     -n processes Number of child processes to fork per interface\n\
@@ -197,11 +198,11 @@ Options:\n\
     -M nr        Size of private memory allocated, in Megabytes\n\
     -w dir       Change the working directory to \"dir\" (default: \"/\")\n\
     -t dir       Chroot to \"dir\"\n\
-    -u uid       Change uid \n\
-    -g gid       Change gid \n\
+    -u uid       Change uid (user id)\n\
+    -g gid       Change gid (group id)\n\
     -P file      Create a pid file\n\
     -G file      Create a pgid file\n\
-    -Y dir       Runtime dir\n\
+    -Y dir       Runtime dir path\n\
     -O nr        Script optimization level (debugging option)\n\
     -a mode      Auto aliases mode: enable with yes or on,\n\
                   disable with no or off\n\
@@ -211,7 +212,7 @@ Options:\n\
     -X name      Specify internal manager for private memory (pkg)\n\
                   - if omitted, the one for shm is used\n"
 #ifdef STATS
-"    -s file     File to which statistics is dumped (disabled otherwise)\n"
+"    -s file     File where to write internal statistics on SIGUSR1\n"
 #endif
 ;
 
@@ -227,9 +228,9 @@ void print_ct_constants(void)
 	printf("SHM_MEM_SIZE=%d, ", SHM_MEM_SIZE);
 #endif
 */
-	printf("MAX_RECV_BUFFER_SIZE %d, MAX_LISTEN %d,"
+	printf("MAX_RECV_BUFFER_SIZE %d"
 			" MAX_URI_SIZE %d, BUF_SIZE %d, DEFAULT PKG_SIZE %uMB\n",
-		MAX_RECV_BUFFER_SIZE, MAX_LISTEN, MAX_URI_SIZE,
+		MAX_RECV_BUFFER_SIZE, MAX_URI_SIZE,
 		BUF_SIZE, PKG_MEM_SIZE);
 #ifdef USE_TCP
 	printf("poll method support: %s.\n", poll_support);
@@ -245,7 +246,6 @@ void print_internals(void)
 	printf("  Default paths to modules: %s\n", MODS_DIR);
 	printf("  Compile flags: %s\n", ver_flags );
 	printf("  MAX_RECV_BUFFER_SIZE=%d\n", MAX_RECV_BUFFER_SIZE);
-	printf("  MAX_LISTEN=%d\n", MAX_LISTEN);
 	printf("  MAX_URI_SIZE=%d\n", MAX_URI_SIZE);
 	printf("  BUF_SIZE=%d\n", BUF_SIZE);
 	printf("  DEFAULT PKG_SIZE=%uMB\n", PKG_MEM_SIZE);
@@ -421,12 +421,6 @@ int pmtu_discovery = 0;
 
 int auto_bind_ipv6 = 0;
 
-#if 0
-char* names[MAX_LISTEN];              /* our names */
-int names_len[MAX_LISTEN];            /* lengths of the names*/
-struct ip_addr addresses[MAX_LISTEN]; /* our ips */
-int addresses_no=0;                   /* number of names/ips */
-#endif
 struct socket_info* udp_listen=0;
 #ifdef USE_TCP
 int tcp_main_pid=0; /* set after the tcp main process is started */
@@ -471,9 +465,7 @@ int child_rank = 0;
 /* how much to wait for children to terminate, before taking extreme measures*/
 int ser_kill_timeout=DEFAULT_SER_KILL_TIMEOUT;
 
-/* process_bm_t process_bit = 0; */
-#ifdef ROUTE_SRV
-#endif
+int ksr_verbose_startup = 0;
 
 /* cfg parsing */
 int cfg_errors=0;
@@ -520,10 +512,11 @@ void cleanup(int show_status)
 
 	/*clean-up*/
 #ifndef SHM_SAFE_MALLOC
-	if (_shm_lock)
-		shm_unlock(); /* hack: force-unlock the shared memory lock in case
-					 some process crashed and let it locked; this will
-					 allow an almost gracious shutdown */
+	if(shm_initialized()) {
+		/* force-unlock the shared memory lock in case some process crashed
+		 * and let it locked; this will allow an almost gracious shutdown */
+		shm_global_unlock();
+	}
 #endif
 	destroy_rpcs();
 	destroy_modules();
@@ -555,6 +548,7 @@ void cleanup(int show_status)
 #endif
 	destroy_timer();
 	pv_destroy_api();
+	ksr_route_locks_set_destroy();
 	destroy_script_cb();
 	destroy_nonsip_hooks();
 	destroy_routes();
@@ -679,6 +673,7 @@ void handle_sigs(void)
 {
 	pid_t	chld;
 	int	chld_status;
+	int	any_chld_stopped;
 	int memlog;
 
 	switch(sig_flag){
@@ -713,7 +708,7 @@ void handle_sigs(void)
 				LOG(memlog, "Memory status (pkg):\n");
 				pkg_status();
 			}
-			if (cfg_get(core, core_cfg, mem_summary) & 2) {
+			if (cfg_get(core, core_cfg, mem_summary) & 4) {
 				LOG(memlog, "Memory still-in-use summary (pkg):\n");
 				pkg_sums();
 			}
@@ -721,11 +716,11 @@ void handle_sigs(void)
 #endif
 #ifdef SHM_MEM
 		if (memlog <= cfg_get(core, core_cfg, debug)){
-			if (cfg_get(core, core_cfg, mem_summary) & 1) {
+			if (cfg_get(core, core_cfg, mem_summary) & 2) {
 				LOG(memlog, "Memory status (shm):\n");
 				shm_status();
 			}
-			if (cfg_get(core, core_cfg, mem_summary) & 2) {
+			if (cfg_get(core, core_cfg, mem_summary) & 8) {
 				LOG(memlog, "Memory still-in-use summary (shm):\n");
 				shm_sums();
 			}
@@ -734,7 +729,9 @@ void handle_sigs(void)
 			break;
 
 		case SIGCHLD:
+			any_chld_stopped=0;
 			while ((chld=waitpid( -1, &chld_status, WNOHANG ))>0) {
+				any_chld_stopped=1;
 				if (WIFEXITED(chld_status))
 					LM_ALERT("child process %ld exited normally,"
 							" status=%d\n", (long)chld,
@@ -751,6 +748,16 @@ void handle_sigs(void)
 								" signal %d\n", (long)chld,
 								 WSTOPSIG(chld_status));
 			}
+
+			/* If it appears that no child process has stopped, then do not terminate on SIGCHLD.
+			   Certain modules like app_python can run external scripts which cause child processes to be started and
+			   stopped. That can result in SIGCHLD being received here even though there is no real problem. Therefore,
+			   we do not terminate Kamailio unless we can find the child process which has stopped. */
+			if (!any_chld_stopped) {
+				LM_INFO("SIGCHLD received, but no child has stopped, ignoring it\n");
+				break;
+			}
+
 #ifndef STOP_JIRIS_CHANGES
 			if (dont_fork) {
 				LM_INFO("dont_fork turned on, living on\n");
@@ -825,7 +832,7 @@ void sig_usr(int signo)
 							LOG(memlog, "Memory status (pkg):\n");
 							pkg_status();
 						}
-						if (cfg_get(core, core_cfg, mem_summary) & 2) {
+						if (cfg_get(core, core_cfg, mem_summary) & 4) {
 							LOG(memlog, "Memory still-in-use summary (pkg):"
 									"\n");
 							pkg_sums();
@@ -844,7 +851,7 @@ void sig_usr(int signo)
 							LOG(memlog, "Memory status (pkg):\n");
 							pkg_status();
 						}
-						if (cfg_get(core, core_cfg, mem_summary) & 2) {
+						if (cfg_get(core, core_cfg, mem_summary) & 4) {
 							LOG(memlog, "Memory still-in-use summary (pkg):\n");
 							pkg_sums();
 						}
@@ -1315,13 +1322,12 @@ int main_loop(void)
 			LM_CRIT("could not initialize shared configuration\n");
 			goto error;
 		}
-	
+
 		/* Register the children that will keep updating their
 		 * local configuration */
 		cfg_register_child(
 				1   /* main = udp listener */
 				+ 1 /* timer */
-				+ 1 /* wtimer */
 #ifdef USE_SLOW_TIMER
 				+ 1 /* slow timer */
 #endif
@@ -1364,7 +1370,6 @@ int main_loop(void)
 				if (pid==0){
 					/* child */
 					/* timer!*/
-					/* process_bit = 0; */
 					if (real_time&2)
 						set_rt_prio(rt_timer2_prio, rt_timer2_policy);
 
@@ -1383,7 +1388,6 @@ int main_loop(void)
 				if (pid==0){
 					/* child */
 					/* timer!*/
-					/* process_bit = 0; */
 					if (real_time&1)
 						set_rt_prio(rt_timer1_prio, rt_timer1_policy);
 					if (arm_timer()<0) goto error;
@@ -1426,7 +1430,6 @@ int main_loop(void)
 		 * will be added later.) */
 		cfg_register_child(
 				1   /* timer */
-				+ 1   /* wtimer */
 #ifdef USE_SLOW_TIMER
 				+ 1 /* slow timer */
 #endif
@@ -1817,7 +1820,6 @@ static int calc_proc_no(void)
 #ifdef USE_SLOW_TIMER
 		+ 1 /* slow timer process */
 #endif
-		+ 1 /* wtimer process */
 #ifdef USE_TCP
 		+((!tcp_disable)?( 1/* tcp main */ + tcp_listeners ):0)
 #endif
@@ -1942,6 +1944,8 @@ int main(int argc, char** argv)
 #ifdef USE_TCP
 	init_tcp_options(); /* set the defaults before the config */
 #endif
+
+	pp_define_core();
 
 	/* process command line (cfg. file path etc) */
 	optind = 1;  /* reset getopt */
@@ -2317,6 +2321,9 @@ try_again:
 	if (pv_reinit_buffer()<0)
 		goto error;
 
+	if (ksr_route_locks_set_init()<0)
+		goto error;
+
 	/* init lookup for core event routes */
 	sr_core_ert_init();
 
@@ -2626,8 +2633,7 @@ try_again:
 
 	/* fix routing lists */
 	if ( (r=fix_rls())!=0){
-		fprintf(stderr, "ERROR: error %d while trying to fix configuration\n",
-						r);
+		fprintf(stderr, "error %d while trying to fix configuration\n", r);
 		goto error;
 	};
 	fixup_complete=1;
@@ -2643,7 +2649,7 @@ try_again:
 	if (is_main) shutdown_children(SIGTERM, 0);
 	if (!dont_daemonize) {
 		if (daemon_status_send(0) < 0)
-			ERR("error sending exit status: %s [%d]\n",
+			fprintf(stderr, "error sending exit status: %s [%d]\n",
 					strerror(errno), errno);
 	}
 	/* else terminate process */
@@ -2654,7 +2660,7 @@ error:
 	if (is_main) shutdown_children(SIGTERM, 0);
 	if (!dont_daemonize) {
 		if (daemon_status_send((char)-1) < 0)
-			ERR("error sending exit status: %s [%d]\n",
+			fprintf(stderr, "error sending exit status: %s [%d]\n",
 					strerror(errno), errno);
 	}
 	return -1;

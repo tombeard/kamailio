@@ -1,4 +1,4 @@
-/* 
+/*
  * Copyright (C) 2001-2004 iptel.org
  * Copyright (C) 2008 1&1 Internet AG
  *
@@ -14,8 +14,8 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License 
- * along with this program; if not, write to the Free Software 
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  */
 
@@ -28,7 +28,13 @@
 
 #include "km_my_con.h"
 #include "km_db_mysql.h"
-#include <mysql_version.h>
+#include <mysql.h>
+
+/* MariaDB exports MYSQL_VERSION_ID as well, but changed numbering scheme */
+#if MYSQL_VERSION_ID > 80000 && ! defined MARIADB_BASE_VERSION
+#include <stdbool.h>
+#endif
+
 #include "../../core/mem/mem.h"
 #include "../../core/dprint.h"
 #include "../../core/ut.h"
@@ -44,7 +50,11 @@ struct my_con* db_mysql_new_connection(const struct db_id* id)
 	char *host, *grp, *egrp;
 	unsigned int connection_flag = 0;
 #if MYSQL_VERSION_ID > 50012
-	my_bool rec;
+#if MYSQL_VERSION_ID > 80000 && ! defined MARIADB_BASE_VERSION
+	bool rec;
+#else
+        my_bool rec;
+#endif
 #endif
 
 	if (!id) {
@@ -108,12 +118,17 @@ struct my_con* db_mysql_new_connection(const struct db_id* id)
 		rec = 1;
 		mysql_options(ptr->con, MYSQL_OPT_RECONNECT, &rec);
 	}
+#else
+	if (db_mysql_auto_reconnect)
+		ptr->con->reconnect = 1;
+	else
+		ptr->con->reconnect = 0;
 #endif
 
-	if (db_mysql_update_affected_found) { 
+	if (db_mysql_update_affected_found) {
 	    connection_flag |= CLIENT_FOUND_ROWS;
 	}
-	
+
 #if (MYSQL_VERSION_ID >= 40100)
 	if (!mysql_real_connect(ptr->con, host, id->username, id->password,
 				id->database, id->port, 0, connection_flag|CLIENT_MULTI_STATEMENTS)) {
@@ -127,11 +142,6 @@ struct my_con* db_mysql_new_connection(const struct db_id* id)
 		mysql_close(ptr->con);
 		goto err;
 	}
-	/* force reconnection if enabled */
-	if (db_mysql_auto_reconnect)
-		ptr->con->reconnect = 1;
-	else 
-		ptr->con->reconnect = 0;
 
 	LM_DBG("connection type is %s\n", mysql_get_host_info(ptr->con));
 	LM_DBG("protocol version is %d\n", mysql_get_proto_info(ptr->con));

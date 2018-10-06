@@ -50,7 +50,6 @@ int bind_xcap(xcap_api_t* api)
 		LM_ERR("Invalid parameter value\n");
 		return -1;
 	}
-	api->get_elem= xcapGetElem;
 	api->int_node_sel= xcapInitNodeSel;
 	api->add_step= xcapNodeSelAddStep;
 	api->add_terminal= xcapNodeSelAddTerminal;
@@ -224,7 +223,7 @@ xcap_node_sel_t* xcapNodeSelAddStep(xcap_node_sel_t* curr_sel, str* name,
 	}
 
 	curr_sel->size+= 1+ new_step.len;
-	if(namespace->len)
+	if(namespace && namespace->len)
 	{
 		curr_sel->size+= namespace->len+ 3;
 	}
@@ -455,39 +454,6 @@ error:
 	return NULL;
 }
 
-/* xcap_root must be a NULL terminated string */
-
-char* xcapGetElem(xcap_get_req_t req, char** etag)
-{
-	char* path= NULL;
-	char* stream= NULL;
-
-	path= get_xcap_path(req);
-	if(path== NULL)
-	{
-		LM_ERR("while constructing xcap path\n");
-		return NULL;
-	}
-
-	stream= send_http_get(path, req.port, req.etag, req.match_type, etag);
-	if(stream== NULL)
-	{
-		LM_DBG("the serched element was not found\n");
-	}
-
-	if(etag== NULL)
-	{
-		LM_ERR("no etag found\n");
-		pkg_free(stream);
-		stream= NULL;
-	}
-
-	if(path)
-		pkg_free(path);
-
-	return stream;
-}
-
 size_t get_xcap_etag( void *ptr, size_t size, size_t nmemb, void *stream)
 {
 	int len= 0;
@@ -548,11 +514,11 @@ char* send_http_get(char* path, unsigned int xcap_port, char* match_etag,
 
 	curl_easy_setopt(curl_handle, CURLOPT_WRITEFUNCTION, write_function);
 
-	curl_easy_setopt(curl_handle, CURLOPT_WRITEDATA, &stream);
+	curl_easy_setopt(curl_handle, CURLOPT_WRITEDATA, (void*)(&stream));
 
 	curl_easy_setopt(curl_handle, CURLOPT_HEADERFUNCTION, get_xcap_etag);
 
-	curl_easy_setopt(curl_handle, CURLOPT_WRITEHEADER, &etag);
+	curl_easy_setopt(curl_handle, CURLOPT_WRITEHEADER, (void*)(&etag));
 
 	if(match_header)
 		curl_easy_setopt(curl_handle, CURLOPT_HEADER, (long)match_header);

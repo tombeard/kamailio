@@ -61,7 +61,7 @@ static inline int rewrite_ruri(struct sip_msg* _m, char* _s)
 /**
  *
  */
-int sd_lookup(struct sip_msg* _msg, char* _table, char* _owner)
+int sd_lookup_owner(sip_msg_t* _msg, str* stable, str* sowner)
 {
 	str user_s, table_s, uri_s;
 	int nr_keys;
@@ -72,24 +72,21 @@ int sd_lookup(struct sip_msg* _msg, char* _table, char* _owner)
 	db_key_t db_cols[1];
 	db1_res_t* db_res = NULL;
 
-	if(_table==NULL || fixup_get_svalue(_msg, (gparam_p)_table, &table_s)!=0)
+	if(stable==NULL || stable->s==NULL || stable->len<=0)
 	{
 		LM_ERR("invalid table parameter");
 		return -1;
 	}
+	table_s = *stable;
 
 	/* init */
 	nr_keys = 0;
 	db_cols[0]=&new_uri_column;
-	
-	if(_owner)
+
+	if(sowner!=NULL && sowner->s!=NULL && sowner->len>0)
 	{
+		uri_s = *sowner;
 		memset(&turi, 0, sizeof(struct sip_uri));
-		if(fixup_get_svalue(_msg, (gparam_p)_owner, &uri_s)!=0)
-		{
-			LM_ERR("invalid owner uri parameter");
-			return -1;
-		}
 		if(parse_uri(uri_s.s, uri_s.len, &turi)!=0)
 		{
 			LM_ERR("bad owner SIP address!\n");
@@ -105,7 +102,7 @@ int sd_lookup(struct sip_msg* _msg, char* _table, char* _owner)
 			goto err_server;
 		}
 	}
-		
+
 	db_keys[nr_keys]=&user_column;
 	db_vals[nr_keys].type = DB1_STR;
 	db_vals[nr_keys].nul = 0;
@@ -121,7 +118,7 @@ int sd_lookup(struct sip_msg* _msg, char* _table, char* _owner)
 		db_vals[nr_keys].val.str_val.s = puri->host.s;
 		db_vals[nr_keys].val.str_val.len = puri->host.len;
 		nr_keys++;
-		
+
 		if (dstrip_s.s!=NULL && dstrip_s.len>0
 			&& dstrip_s.len<puri->host.len
 			&& strncasecmp(puri->host.s,dstrip_s.s,dstrip_s.len)==0)
@@ -164,50 +161,50 @@ int sd_lookup(struct sip_msg* _msg, char* _table, char* _owner)
 
 	db_funcs.use_table(db_handle, &table_s);
 	if(db_funcs.query(db_handle, db_keys, NULL, db_vals, db_cols,
-		nr_keys /*no keys*/, 1 /*no cols*/, NULL, &db_res)!=0)
+		nr_keys /*no keys*/, 1 /*no cols*/, NULL, &db_res)!=0 || db_res==NULL)
 	{
 		LM_ERR("failed to query database\n");
 		goto err_server;
 	}
 
-	if (RES_ROW_N(db_res)<=0 || RES_ROWS(db_res)[0].values[0].nul != 0)
-	{
+	if(RES_ROW_N(db_res) <= 0 || RES_ROWS(db_res)[0].values[0].nul != 0) {
 		LM_DBG("no sip address found for R-URI\n");
-		if (db_res!=NULL && db_funcs.free_result(db_handle, db_res) < 0)
+		if(db_funcs.free_result(db_handle, db_res) < 0) {
 			LM_DBG("failed to free result of query\n");
+		}
 		return -1;
 	}
 
 	user_s.s = useruri_buf+4;
 	switch(RES_ROWS(db_res)[0].values[0].type)
-	{ 
+	{
 		case DB1_STRING:
-			strcpy(user_s.s, 
+			strcpy(user_s.s,
 				(char*)RES_ROWS(db_res)[0].values[0].val.string_val);
 			user_s.len = strlen(user_s.s);
 		break;
 		case DB1_STR:
-			strncpy(user_s.s, 
+			strncpy(user_s.s,
 				(char*)RES_ROWS(db_res)[0].values[0].val.str_val.s,
 				RES_ROWS(db_res)[0].values[0].val.str_val.len);
 			user_s.len = RES_ROWS(db_res)[0].values[0].val.str_val.len;
 			user_s.s[user_s.len] = '\0';
 		break;
 		case DB1_BLOB:
-			strncpy(user_s.s, 
+			strncpy(user_s.s,
 				(char*)RES_ROWS(db_res)[0].values[0].val.blob_val.s,
 				RES_ROWS(db_res)[0].values[0].val.blob_val.len);
 			user_s.len = RES_ROWS(db_res)[0].values[0].val.blob_val.len;
 			user_s.s[user_s.len] = '\0';
+		break;
 		default:
 			LM_ERR("unknown type of DB new_uri column\n");
-			if (db_res != NULL && db_funcs.free_result(db_handle, db_res) < 0)
-			{
+			if (db_funcs.free_result(db_handle, db_res) < 0) {
 				LM_DBG("failed to free result of query\n");
 			}
 			goto err_server;
 	}
-	
+
 	/* check 'sip:' */
 	if(user_s.len<4 || strncmp(user_s.s, "sip:", 4))
 	{
@@ -219,8 +216,9 @@ int sd_lookup(struct sip_msg* _msg, char* _table, char* _owner)
 	/**
 	 * Free the result because we don't need it anymore
 	 */
-	if (db_res!=NULL && db_funcs.free_result(db_handle, db_res) < 0)
+	if (db_funcs.free_result(db_handle, db_res) < 0) {
 		LM_DBG("failed to free result of query\n");
+	}
 
 	/* set the URI */
 	LM_DBG("URI of sd from R-URI [%s]\n", user_s.s);
@@ -236,3 +234,28 @@ err_server:
 	return -1;
 }
 
+/**
+ *
+ */
+int w_sd_lookup(struct sip_msg* _msg, char* _table, char* _owner)
+{
+	str table_s, uri_s;
+
+	if(_table==NULL || fixup_get_svalue(_msg, (gparam_p)_table, &table_s)!=0)
+	{
+		LM_ERR("invalid table parameter");
+		return -1;
+	}
+
+	if(_owner)
+	{
+		if(fixup_get_svalue(_msg, (gparam_p)_owner, &uri_s)!=0)
+		{
+			LM_ERR("invalid owner uri parameter");
+			return -1;
+		}
+		return sd_lookup_owner(_msg, &table_s, &uri_s);
+	}
+
+	return sd_lookup_owner(_msg, &table_s, NULL);
+}

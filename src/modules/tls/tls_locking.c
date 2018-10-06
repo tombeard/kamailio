@@ -32,6 +32,9 @@
 static int n_static_locks=0;
 static gen_lock_set_t* static_locks=0;
 
+/* OpenSSL is thread-safe since 1.1.0 */
+#if OPENSSL_VERSION_NUMBER < 0x10100000L || defined(LIBRESSL_VERSION_NUMBER)
+
 /* "dynamic" locks */
 
 struct CRYPTO_dynlock_value{
@@ -45,12 +48,12 @@ static struct CRYPTO_dynlock_value* dyn_create_f(const char* file, int line)
 
 	l=shm_malloc(sizeof(struct CRYPTO_dynlock_value));
 	if (l==0){
-		LOG(L_CRIT, "ERROR: tls: dyn_create_f locking callback out of shm."
+		LM_CRIT("dyn create locking callback out of shm."
 				" memory (called from %s:%d)\n", file, line);
 		goto error;
 	}
 	if (lock_init(&l->lock)==0){
-		LOG(L_CRIT, "ERROR: tls: dyn_create_f locking callback: lock "
+		LM_CRIT("dyn create locking callback: lock "
 				"initialization failed (called from %s:%d)\n", file, line);
 		shm_free(l);
 		goto error;
@@ -61,12 +64,11 @@ error:
 }
 
 
-
 static void dyn_lock_f(int mode, struct CRYPTO_dynlock_value* l,
 						const char* file, int line)
 {
 	if (l==0){
-		LOG(L_CRIT, "BUG: tls: dyn_lock_f locking callback: null lock"
+		LM_CRIT("dyn lock locking callback: null lock"
 				" (called from %s:%d)\n", file, line);
 		/* try to continue */
 		return;
@@ -84,7 +86,7 @@ static void dyn_destroy_f(struct CRYPTO_dynlock_value *l,
 							const char* file, int line)
 {
 	if (l==0){
-		LOG(L_CRIT, "BUG: tls: dyn_destroy_f locking callback: null lock"
+		LM_CRIT("dyn destroy locking callback: null lock"
 				" (called from %s:%d)\n", file, line);
 		return;
 	}
@@ -98,7 +100,7 @@ static void dyn_destroy_f(struct CRYPTO_dynlock_value *l,
 static void locking_f(int mode, int n, const char* file, int line)
 {
 	if (n<0 || n>=n_static_locks){
-		LOG(L_CRIT, "BUG: tls: locking_f (callback): invalid lock number: "
+		LM_CRIT("locking (callback): invalid lock number: "
 				" %d (range 0 - %d), called from %s:%d\n",
 				n, n_static_locks, file, line);
 		abort(); /* quick crash :-) */
@@ -116,6 +118,7 @@ static void locking_f(int mode, int n, const char* file, int line)
 	}
 }
 
+#endif /* openssl < 0x10100000L (1.1.0) or LibreSSL */
 
 
 void tls_destroy_locks()
@@ -140,8 +143,7 @@ int tls_init_locks()
 	/* init "static" tls locks */
 	n_static_locks=CRYPTO_num_locks();
 	if (n_static_locks<0){
-		LOG(L_CRIT, "BUG: tls: tls_init_locking: bad CRYPTO_num_locks %d\n",
-					n_static_locks);
+		LM_CRIT("bad CRYPTO_num_locks %d\n", n_static_locks);
 		n_static_locks=0;
 	}
 	if (n_static_locks){
@@ -151,13 +153,12 @@ int tls_init_locks()
 		}
 		static_locks=lock_set_alloc(n_static_locks);
 		if (static_locks==0){
-			LOG(L_CRIT, "ERROR: tls_init_locking: could not allocate lockset"
-					" with %d locks\n", n_static_locks);
+			LM_CRIT("could not allocate lockset with %d locks\n",
+					n_static_locks);
 			goto error;
 		}
 		if (lock_set_init(static_locks)==0){
-			LOG(L_CRIT, "ERROR: tls_init_locking: lock_set_init failed "
-					"(%d locks)\n", n_static_locks);
+			LM_CRIT("lock set init failed (%d locks)\n", n_static_locks);
 			lock_set_dealloc(static_locks);
 			static_locks=0;
 			n_static_locks=0;
@@ -165,10 +166,14 @@ int tls_init_locks()
 		}
 		CRYPTO_set_locking_callback(locking_f);
 	}
+
+/* OpenSSL is thread-safe since 1.1.0 */
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
 	/* set "dynamic" locks callbacks */
 	CRYPTO_set_dynlock_create_callback(dyn_create_f);
 	CRYPTO_set_dynlock_lock_callback(dyn_lock_f);
 	CRYPTO_set_dynlock_destroy_callback(dyn_destroy_f);
+#endif
 
 	/* starting with v1.0.0 openssl does not use anymore getpid(), but address
 	 * of errno which can point to same virtual address in a multi-process

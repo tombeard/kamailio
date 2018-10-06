@@ -75,8 +75,8 @@ Carsten Bock
               5.7. rtpproxy_stream2uac(prompt_name, count),
               5.8. rtpproxy_stream2uas(prompt_name, count)
               5.9. rtpproxy_stop_stream2uac(),
-              5.10. start_recording()
-              5.11. rtpproxy_stop_stream2uas(prompt_name, count)
+              5.10. rtpproxy_stop_stream2uas()
+              5.11. start_recording()
 
         6. Exported Pseudo Variables
 
@@ -109,10 +109,11 @@ Carsten Bock
    1.16. rtpproxy_destroy usage
    1.17. rtpproxy_manage usage
    1.18. rtpproxy_stream2xxx usage
-   1.19. start_recording usage
-   1.20. $rtpstat-Usage
-   1.21. rtpproxy.enable usage
-   1.22. rtpproxy.list usage
+   1.19. rtpproxy_stop_stream2uas usage
+   1.20. start_recording usage
+   1.21. $rtpstat-Usage
+   1.22. rtpproxy.enable usage
+   1.23. rtpproxy.list usage
 
 Chapter 1. Admin Guide
 
@@ -150,8 +151,8 @@ Chapter 1. Admin Guide
         5.7. rtpproxy_stream2uac(prompt_name, count),
         5.8. rtpproxy_stream2uas(prompt_name, count)
         5.9. rtpproxy_stop_stream2uac(),
-        5.10. start_recording()
-        5.11. rtpproxy_stop_stream2uas(prompt_name, count)
+        5.10. rtpproxy_stop_stream2uas()
+        5.11. start_recording()
 
    6. Exported Pseudo Variables
 
@@ -229,7 +230,7 @@ Chapter 1. Admin Guide
 
 4.1. rtpproxy_sock (string)
 
-   Used to define the list of RTPPRoxy instances to connect to. These can
+   Used to define the list of RTPProxy instances to connect to. These can
    be UNIX sockets or IPv4/IPv6 UDP sockets. Each modparam entry will
    insert sockets into a single set. If no set ID is given, the default
    set ID '0' will be used. To define multiple sets add the set number at
@@ -295,7 +296,7 @@ modparam("rtpproxy", "rtpproxy_retr", 2)
 4.5. nortpproxy_str (string)
 
    This parameter sets the SDP attribute used by rtpproxy to mark the
-   message's SDP attachemnt with information that it have already been
+   message's SDP attachment with information that it have already been
    changed.
 
    If empty string, no marker will be added or checked.
@@ -346,7 +347,7 @@ modparam("rtpproxy", "ice_candidate_priority_avp", "$avp(ice_priority)")
 
 4.8. extra_id_pv (string)
 
-   The parameter sets the PV defination to use when the “b” parameter is
+   The parameter sets the PV definition to use when the “b” parameter is
    used on unforce_rtp_proxy(), rtpproxy_offer(), rtpproxy_answer() or
    rtpproxy_manage() command.
 
@@ -415,8 +416,8 @@ xlog("L_INFO", "Chose rtpp instance $var(RTP_INSTANCE)\n");
    5.7. rtpproxy_stream2uac(prompt_name, count),
    5.8. rtpproxy_stream2uas(prompt_name, count)
    5.9. rtpproxy_stop_stream2uac(),
-   5.10. start_recording()
-   5.11. rtpproxy_stop_stream2uas(prompt_name, count)
+   5.10. rtpproxy_stop_stream2uas()
+   5.11. start_recording()
 
 5.1.  set_rtp_proxy_set(setid)
 
@@ -465,7 +466,7 @@ rtpproxy_offer();
           + b - append branch specific variable to Call-ID when sending
             command to rtpproxy. This creates one rtpproxy session per
             unique variable. Works similar to the 1, 2 and 3 parameter,
-            but is usefull when forking to multiple destinations on
+            but is useful when forking to multiple destinations on
             different address families or network segments, requiring
             different rtpproxy parameters. The variable value is taken
             from the “extra_id_pv”. When used, it must be used in every
@@ -527,9 +528,9 @@ rtpproxy_offer();
             increments, however for some codecs the increment could differ
             (e.g. 30ms for GSM or 20ms for G.723). The RTPproxy would
             select the closest value supported by the codec. This feature
-            could be used for significantly reducing bandwith overhead for
-            low bitrate codecs, for example with G.729 going from 10ms to
-            100ms saves two thirds of the network bandwith.
+            could be used for significantly reducing bandwidth overhead
+            for low bitrate codecs, for example with G.729 going from 10ms
+            to 100ms saves two thirds of the network bandwidth.
      * ip_address - new SDP IP address.
 
    This function can be used from ANY_ROUTE.
@@ -608,9 +609,7 @@ onreply_route[2]
             to rtpproxy. See flag '1' for its meaning.
           + b - append branch specific variable to Call-ID when sending
             command to rtpproxy. See rtpproxy_offer() for details.
-            <listitem>
-            </listitem>
-            t - do not include To tag to “delete” command to rtpproxy thus
+          + t - do not include To tag to “delete” command to rtpproxy thus
             causing full call to be deleted. Useful for deleting unused
             rtpproxy call when 200 OK is received on a branch, where
             rtpproxy is not needed.
@@ -714,7 +713,23 @@ rtpproxy_manage();
 
    These functions can be used from REQUEST_ROUTE, ONREPLY_ROUTE.
 
-5.10.  start_recording()
+5.10.  rtpproxy_stop_stream2uas()
+
+   See function rtpproxy_stop_stream2uac().
+
+   Example 1.19. rtpproxy_stop_stream2uas usage
+...
+    if (is_method("INVITE")) {
+        rtpproxy_offer();
+        if (is_audio_on_hold()) {
+            rtpproxy_stream2uas("/var/rtpproxy/prompts/music_on_hold", "-1");
+        } else {
+            rtpproxy_stop_stream2uas();
+        };
+    };
+...
+
+5.11.  start_recording()
 
    This function will send a signal to the RTP-Proxy to record the RTP
    stream on the RTP-Proxy. This function is only supported by Sippy
@@ -722,14 +737,10 @@ rtpproxy_manage();
 
    This function can be used from REQUEST_ROUTE and ONREPLY_ROUTE.
 
-   Example 1.19. start_recording usage
+   Example 1.20. start_recording usage
 ...
 start_recording();
 ...
-
-5.11.  rtpproxy_stop_stream2uas(prompt_name, count)
-
-   See function rtpproxy_stop_stream2uac(prompt_name, count).
 
 6. Exported Pseudo Variables
 
@@ -742,7 +753,7 @@ start_recording();
    packet-counters. The statistics must be retrieved before the session is
    deleted (before unforce_rtpproxy()).
 
-   Example 1.20. $rtpstat-Usage
+   Example 1.21. $rtpstat-Usage
 ...
     append_hf("X-RTP-Statistics: $rtpstat\r\n");
 ...
@@ -765,7 +776,7 @@ start_recording();
    NOTE: if a rtpproxy is defined multiple times (in the same or different
    sets), all of its instances will be enabled/disabled.
 
-   Example 1.21.  rtpproxy.enable usage
+   Example 1.22.  rtpproxy.enable usage
 ...
 $ kamcmd rtpproxy.enable udp:192.168.2.133:8081 0
 ...
@@ -777,7 +788,7 @@ $ kamcmd rtpproxy.enable udp:192.168.2.133:8081 0
 
    No parameter.
 
-   Example 1.22.  rtpproxy.list usage
+   Example 1.23.  rtpproxy.list usage
 ...
 $ kamcmd rtpproxy.list
 ...
@@ -800,7 +811,7 @@ Chapter 2. Frequently Asked Questions
 
        Where can I find more about Kamailio?
 
-       Take a look at http://www.kamailio.org/.
+       Take a look at https://www.kamailio.org/.
 
    2.3.
 
@@ -809,16 +820,13 @@ Chapter 2. Frequently Asked Questions
        First at all check if your question was already answered on one of our
        mailing lists:
          * User Mailing List -
-           http://lists.sip-router.org/cgi-bin/mailman/listinfo/sr-users
+           https://lists.kamailio.org/cgi-bin/mailman/listinfo/sr-users
          * Developer Mailing List -
-           http://lists.sip-router.org/cgi-bin/mailman/listinfo/sr-dev
+           https://lists.kamailio.org/cgi-bin/mailman/listinfo/sr-dev
 
        E-mails regarding any stable Kamailio release should be sent to
-       <sr-users@lists.sip-router.org> and e-mails regarding development
-       versions should be sent to <sr-dev@lists.sip-router.org>.
-
-       If you want to keep the mail private, send it to
-       <sr-users@lists.sip-router.org>.
+       <sr-users@lists.kamailio.org> and e-mails regarding development
+       versions should be sent to <sr-dev@lists.kamailio.org>.
 
    2.4.
 

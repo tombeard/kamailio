@@ -53,6 +53,7 @@
 #include "../../core/rpc.h"
 #include "../../core/rpc_lookup.h"
 #include "../../core/rand/kam_rand.h"
+#include "../../core/kemi.h"
 
 #include "pl_statistics.h"
 #include "pl_ht.h"
@@ -63,7 +64,7 @@ MODULE_VERSION
 /*
  * timer interval length in seconds, tunable via modparam
  */
-#define RL_TIMER_INTERVAL 10
+#define PL_TIMER_INTERVAL 10
 
 /** SL API structure */
 sl_api_t slb;
@@ -106,7 +107,7 @@ static int load_source_mp = LOAD_SOURCE_CPU;
 static int * load_source;
 
 /* these only change in the mod_init() process -- no locking needed */
-static int timer_interval = RL_TIMER_INTERVAL;
+static int timer_interval = PL_TIMER_INTERVAL;
 int _pl_cfg_setpoint;        /* desired load, used when reading modparams */
 /* === */
 
@@ -124,15 +125,15 @@ static int fixup_pl_check3(void** param, int param_no);
 
 static cmd_export_t cmds[]={
 	{"pl_check",      (cmd_function)w_pl_check,        1, fixup_spve_null,
-		0,               REQUEST_ROUTE|CORE_ONREPLY_ROUTE},
+		0,    ANY_ROUTE},
 	{"pl_check",      (cmd_function)w_pl_check3,       3, fixup_pl_check3,
-		0,               REQUEST_ROUTE|CORE_ONREPLY_ROUTE},
+		0,    ANY_ROUTE},
 	{"pl_drop",       (cmd_function)w_pl_drop_default, 0, 0,
-		0,               REQUEST_ROUTE},
+		0,    REQUEST_ROUTE|BRANCH_ROUTE|FAILURE_ROUTE|ONSEND_ROUTE},
 	{"pl_drop",       (cmd_function)w_pl_drop_forced,  1, fixup_uint_null,
-		0,               REQUEST_ROUTE},
+		0,    REQUEST_ROUTE|BRANCH_ROUTE|FAILURE_ROUTE|ONSEND_ROUTE},
 	{"pl_drop",       (cmd_function)w_pl_drop,         2, fixup_uint_uint,
-		0,               REQUEST_ROUTE},
+		0,    REQUEST_ROUTE|BRANCH_ROUTE|FAILURE_ROUTE|ONSEND_ROUTE},
 	{0,0,0,0,0,0}
 };
 static param_export_t params[]={
@@ -153,20 +154,17 @@ static rpc_export_t rpc_methods[];
 
 /** module exports */
 struct module_exports exports= {
-	"pipelimit",
-	DEFAULT_DLFLAGS,		/* dlopen flags */
-	cmds,
-	params,
-	0,				/* exported statistics */
-	0,				/* exported MI functions */
-	0,				/* exported pseudo-variables */
-	0,				/* extra processes */
-	mod_init,			/* module initialization function */
-	0,
-	(destroy_function) destroy,	/* module exit function */
-	0				/* per-child init function */
+	"pipelimit",     /* module name */
+	DEFAULT_DLFLAGS, /* dlopen flags */
+	cmds,            /* cmd exports */
+	params,          /* param exports */
+	0,               /* RPC method exports */
+	0,               /* exported pseudo-variables */
+	0,               /* response handling function */
+	mod_init,        /* module initialization function */
+	0,               /* per-child init function */
+	destroy          /* module exit function */
 };
-
 
 #ifdef __OS_darwin
 #include <sys/param.h>
@@ -564,7 +562,7 @@ static int pipe_push_direct(pl_pipe_t *pipe)
 			ret = 2;
 			break;
 		case PIPE_ALGO_TAILDROP:
-			ret = (pipe->counter <= pipe->limit * timer_interval) ? 1 : -1;
+			ret = (pipe->counter <= pipe->limit) ? 1 : -1;
 			break;
 		case PIPE_ALGO_RED:
 			if (pipe->load == 0)
@@ -643,13 +641,42 @@ static int w_pl_check(struct sip_msg* msg, char *p1, char *p2)
 /**
  * limit checking with creation of pipe if it doesn't exist
  */
+static int pl_check_limit(sip_msg_t* msg, str *pipeid, str *alg, int limit)
+{
+	pl_pipe_t *pipe = NULL;
+
+	pipe = pl_pipe_get(pipeid, 1);
+	if(pipe==NULL) {
+		LM_DBG("pipe not found [%.*s] - trying to add it\n",
+				pipeid->len, pipeid->s);
+		if(pl_pipe_add(pipeid, alg, limit)<0) {
+			LM_ERR("failed to add pipe [%.*s]\n",
+				pipeid->len, pipeid->s);
+			return -2;
+		}
+		pipe = pl_pipe_get(pipeid, 0);
+		if(pipe==NULL) {
+			LM_ERR("failed to retrieve pipe [%.*s]\n",
+				pipeid->len, pipeid->s);
+			return -2;
+		}
+	} else {
+		if(limit>0) pipe->limit = limit;
+		pl_pipe_release(&pipe->name);
+	}
+
+	return pl_check(msg, pipeid);
+}
+
+/**
+ * limit checking with creation of pipe if it doesn't exist
+ */
 static int w_pl_check3(struct sip_msg* msg, char *p1pipe, char *p2alg,
 		char *p3limit)
 {
 	int limit;
 	str pipeid = {0, 0};
 	str alg = {0, 0};
-	pl_pipe_t *pipe = NULL;
 
 	if(msg==NULL)
 		return -1;
@@ -670,34 +697,11 @@ static int w_pl_check3(struct sip_msg* msg, char *p1pipe, char *p2alg,
 	if(fixup_get_svalue(msg, (gparam_t*)p2alg, &alg)!=0
 			|| alg.s == 0)
 	{
-		LM_ERR("invalid algoritm parameter");
+		LM_ERR("invalid algorithm parameter");
 		return -1;
 	}
 
-	pipe = pl_pipe_get(&pipeid, 1);
-	if(pipe==NULL)
-	{
-		LM_DBG("pipe not found [%.*s] - trying to add it\n",
-				pipeid.len, pipeid.s);
-		if(pl_pipe_add(&pipeid, &alg, limit)<0)
-		{
-			LM_ERR("failed to add pipe [%.*s]\n",
-				pipeid.len, pipeid.s);
-			return -2;
-		}
-		pipe = pl_pipe_get(&pipeid, 0);
-		if(pipe==NULL)
-		{
-			LM_ERR("failed to retrieve pipe [%.*s]\n",
-				pipeid.len, pipeid.s);
-			return -2;
-		}
-	} else {
-		if(limit>0) pipe->limit = limit;
-		pl_pipe_release(&pipe->name);
-	}
-
-	return pl_check(msg, &pipeid);
+	return pl_check_limit(msg, &pipeid, &alg, limit);
 }
 
 static int fixup_pl_check3(void** param, int param_no)
@@ -727,13 +731,17 @@ static ticks_t pl_timer_handle(ticks_t ticks, struct timer_ln* tl, void* data)
 
 /* rpc function documentation */
 const char *rpc_pl_stats_doc[2] = {
-	"Print pipelimit statistics: \
+	"Print pipelimit statistics (string output): \
 <id> <load> <counter>", 0
 };
 
 const char *rpc_pl_get_pipes_doc[2] = {
-	"Print pipes info: \
+	"Print pipes info (string output): \
 <id> <algorithm> <limit> <counter>", 0
+};
+
+const char *rpc_pl_list_doc[2] = {
+	"List details for one or all pipes", 0
 };
 
 const char *rpc_pl_set_pipe_doc[2] = {
@@ -757,6 +765,7 @@ const char *rpc_pl_push_load_doc[2] = {
 
 /* rpc function implementations */
 void rpc_pl_stats(rpc_t *rpc, void *c);
+void rpc_pl_list(rpc_t *rpc, void *c);
 void rpc_pl_get_pipes(rpc_t *rpc, void *c);
 void rpc_pl_set_pipe(rpc_t *rpc, void *c);
 
@@ -797,6 +806,7 @@ void rpc_pl_push_load(rpc_t *rpc, void *c) {
 
 static rpc_export_t rpc_methods[] = {
 	{"pl.stats",      rpc_pl_stats,     rpc_pl_stats_doc,     RET_ARRAY},
+	{"pl.list",       rpc_pl_list,      rpc_pl_list_doc,      RET_ARRAY},
 	{"pl.get_pipes",  rpc_pl_get_pipes, rpc_pl_get_pipes_doc, RET_ARRAY},
 	{"pl.set_pipe",   rpc_pl_set_pipe,  rpc_pl_set_pipe_doc,  0},
 	{"pl.get_pid",    rpc_pl_get_pid,   rpc_pl_get_pid_doc,   0},
@@ -805,3 +815,61 @@ static rpc_export_t rpc_methods[] = {
 	{0, 0, 0, 0}
 };
 
+static int ki_pl_drop(sip_msg_t* msg)
+{
+	return pl_drop(msg, 0, 0);
+}
+
+static int ki_pl_drop_retry(sip_msg_t* msg, int rafter)
+{
+	return pl_drop(msg, rafter, rafter);
+}
+
+static int ki_pl_drop_range(sip_msg_t* msg, int rmin, int rmax)
+{
+	return pl_drop(msg, rmin, rmax);
+}
+
+/**
+ *
+ */
+/* clang-format off */
+static sr_kemi_t sr_kemi_pipelimit_exports[] = {
+	{ str_init("pipelimit"), str_init("pl_check"),
+		SR_KEMIP_INT, pl_check,
+		{ SR_KEMIP_STR, SR_KEMIP_NONE, SR_KEMIP_NONE,
+			SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE }
+	},
+	{ str_init("pipelimit"), str_init("pl_check_limit"),
+		SR_KEMIP_INT, pl_check_limit,
+		{ SR_KEMIP_STR, SR_KEMIP_STR, SR_KEMIP_INT,
+			SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE }
+	},
+	{ str_init("pipelimit"), str_init("pl_drop"),
+		SR_KEMIP_INT, ki_pl_drop,
+		{ SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE,
+			SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE }
+	},
+	{ str_init("pipelimit"), str_init("pl_drop_retry"),
+		SR_KEMIP_INT, ki_pl_drop_retry,
+		{ SR_KEMIP_INT, SR_KEMIP_NONE, SR_KEMIP_NONE,
+			SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE }
+	},
+	{ str_init("pipelimit"), str_init("pl_drop_range"),
+		SR_KEMIP_INT, ki_pl_drop_range,
+		{ SR_KEMIP_INT, SR_KEMIP_INT, SR_KEMIP_NONE,
+			SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE }
+	},
+
+	{ {0, 0}, {0, 0}, 0, NULL, { 0, 0, 0, 0, 0, 0 } }
+};
+/* clang-format on */
+
+/**
+ *
+ */
+int mod_register(char *path, int *dlflags, void *p1, void *p2)
+{
+	sr_kemi_modules_add(sr_kemi_pipelimit_exports);
+	return 0;
+}

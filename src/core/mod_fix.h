@@ -1,4 +1,4 @@
-/* 
+/*
  * Copyright (C) 2008 iptelorg GmbH
  *
  * Permission to use, copy, modify, and distribute this software for any
@@ -36,7 +36,7 @@
 /**
  * generic parameter that holds a string, an int, a pseudo-variable
  * or a ser select, avp, or subst.
- * 
+ *
  * Note: used only for compatibility with existing kamailio code,
  *  please use fparam_t directly in the future.
  *
@@ -86,13 +86,8 @@ int fixup_uint_uint(void** param, int param_no);
 
 int fixup_regexp_null(void** param, int param_no);
 int fixup_free_regexp_null(void** param, int param_no);
-#if 0
-int fixup_regexp_none(void** param, int param_no);
-int fixup_free_regexp_none(void** param, int param_no);
-/* not implemened yet */
-int fixup_regexpNL_null(void** param, int param_no);
-int fixup_regexpNL_none(void** param, int param_no);
-#endif
+int fixup_regexp_regexp(void** param, int param_no);
+int fixup_free_regexp_regexp(void** param, int param_no);
 
 int fixup_pvar_null(void **param, int param_no);
 int fixup_free_pvar_null(void** param, int param_no);
@@ -127,19 +122,35 @@ int fixup_free_igp_pvar(void** param, int param_no);
 int fixup_igp_pvar_pvar(void** param, int param_no);
 int fixup_free_igp_pvar_pvar(void** param, int param_no);
 
+int fixup_igp_spve(void** param, int param_no);
+int fixup_free_igp_spve(void** param, int param_no);
+
+int fixup_pvar_all(void** param, int param_no);
+int fixup_free_pvar_all(void** param, int param_no);
+
 int fixup_spve_spve(void** param, int param_no);
 int fixup_free_spve_spve(void** param, int param_no);
 int fixup_spve_null(void** param, int param_no);
 int fixup_free_spve_null(void** param, int param_no);
 int fixup_spve_uint(void** param, int param_no);
+int fixup_free_spve_uint(void** param, int param_no);
 int fixup_spve_str(void** param, int param_no);
 int fixup_free_spve_str(void** param, int param_no);
 
 int fixup_spve_all(void** param, int param_no);
+int fixup_free_spve_all(void** param, int param_no);
 int fixup_igp_all(void** param, int param_no);
 
 int fixup_spve_igp(void** param, int param_no);
 int fixup_free_spve_igp(void** param, int param_no);
+int fixup_spve_pvar(void** param, int param_no);
+int fixup_free_spve_pvar(void** param, int param_no);
+
+int fixup_spve_spve_igp(void** param, int param_no);
+int fixup_free_spve_spve_igp(void** param, int param_no);
+
+int fixup_none_spve(void** param, int param_no);
+int fixup_free_none_spve(void** param, int param_no);
 
 /** get the corresp. free fixup function.*/
 free_fixup_function mod_fix_get_fixup_free(fixup_function f);

@@ -17,15 +17,16 @@
     <section>
 	<title>Overview</title>
 	<para>
-		This module allows executing JavaScript scripts from config file.
+		This module allows executing JavaScript scripts from the Kamailio 
+		configuration file.
 		It exports all KEMI functions to JavaScript in order to access the
-		current processed SIP message. These functions are within JavaScript
-		object 'KSR'.
+		currently processed SIP message. These functions are named within
+		the JavaScript object 'KSR'.
 	</para>
 	<para>
-		It includes the Duktape JavaScript engine (http://www.duktape.org),
-		which is a fast and easy to embed JavaScript interpreter. Exported API
-		from SIP router to JavaScript is documented in the dokuwiki.
+		The module is based on the Duktape JavaScript engine (http://www.duktape.org),
+		which is a fast and easy to embed JavaScript interpreter. The exported API
+		from Kamailio to JavaScript is documented in the wiki.
 	</para>
 	<para>
 		The module has two JavaScript contexts:
@@ -116,7 +117,7 @@ modparam("app_jsdt", "load", "/usr/local/etc/kamailio/js/myscript.js")
 		<function moreinfo="none">jsdt_dofile(path)</function>
 	    </title>
 	    <para>
-		Execute the JS script stored in 'path'. The parameter can be
+		Execute the JavaScript script stored in 'path'. The parameter can be
 		a string with pseudo-variables evaluated at runtime.
 	    </para>
 		<example>
@@ -134,7 +135,7 @@ jsdt_dofile("/usr/local/etc/kamailio/js/myscript.js");
 		<function moreinfo="none">jsdt_dostring(script)</function>
 	    </title>
 	    <para>
-		Execute the Lua script stored in parameter. The parameter can be
+		Execute the JavaScript script stored in parameter. The parameter can be
 		a string with pseudo-variables.
 	    </para>
 		<example>
@@ -201,14 +202,14 @@ if(!jsdt_runstring('KSR.dbg("Hello World from $fU\n")'))
 
     <section>
         <title>RPC Commands</title>
-        <section id="app_jsrt.r.reload">
+        <section id="app_jsdt.r.reload">
             <title>
-            <function moreinfo="none">app_jsrt.reload</function>
+            <function moreinfo="none">app_jsdt.reload</function>
             </title>
             <para>
             Marks the need to reload the js script.
             The actual reload is done by every working process when the next
-            call to jsrt_run() function or KEMI config is executed.
+            call to jsdt_run() function or KEMI config is executed.
             </para>
             <para>
             Name: <emphasis>app_jsdt.reload</emphasis>
@@ -219,7 +220,27 @@ if(!jsdt_runstring('KSR.dbg("Hello World from $fU\n")'))
             </para>
             <programlisting  format="linespecific">
 ...
-&kamcmd; app_jsrt.reload
+&kamcmd; app_jsdt.reload
+...
+            </programlisting>
+        </section>
+       <section id="app_jsdt.r.api_list">
+            <title>
+            <function moreinfo="none">app_jsdt.api_list</function>
+            </title>
+            <para>
+			List the functions available via Kemi framework.
+            </para>
+            <para>
+            Name: <emphasis>app_jsdt.api_list</emphasis>
+            </para>
+            <para>Parameters: <emphasis>none</emphasis></para>
+            <para>
+            Example:
+            </para>
+            <programlisting  format="linespecific">
+...
+&kamcmd; app_jsdt.api_list
 ...
             </programlisting>
         </section>
@@ -228,7 +249,7 @@ if(!jsdt_runstring('KSR.dbg("Hello World from $fU\n")'))
     <section>
 	<title>Example of usage</title>
     <para>
-		Create your JS script and stored on file system,
+		Create your JS script and store it on the file system,
 		say: '/usr/local/etc/kamailio/js/myscript.js'.
     </para>
 <programlisting format="linespecific">

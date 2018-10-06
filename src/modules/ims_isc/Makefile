@@ -1,7 +1,7 @@
 #
 # ims_isc make file
 #
-# 
+#
 
 include ../../Makefile.defs
 auto_gen=
@@ -19,8 +19,6 @@ else
 		-I$(LOCALBASE)/include
 	LIBS+=-L$(LOCALBASE)/lib -lxml2
 endif
-
-DEFS+=-DOPENSER_MOD_INTERFACE
 
 SERLIBPATH=../../lib
 SER_LIBS+=$(SERLIBPATH)/ims/kamailio_ims

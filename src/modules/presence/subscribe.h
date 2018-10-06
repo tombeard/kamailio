@@ -95,7 +95,10 @@ void msg_active_watchers_clean(unsigned int ticks,void *param);
 void msg_watchers_clean(unsigned int ticks,void *param);
 
 int handle_subscribe0(struct sip_msg*);
-int w_handle_subscribe(struct sip_msg*, char *watcher_uri);
+int w_handle_subscribe0(struct sip_msg*, char*, char*);
+int w_handle_subscribe(struct sip_msg*, char *watcher_uri, char *p2);
+int w_handle_subscribe1(struct sip_msg*, char *watcher_uri);
+int handle_subscribe_uri(struct sip_msg*, str*);
 int handle_subscribe(struct sip_msg*, str watcher_user, str watcher_domain);
 
 void timer_db_update(unsigned int ticks,void *param);
@@ -106,10 +109,10 @@ int restore_db_subs(void);
 
 typedef int (*handle_expired_func_t)(subs_t* );
 
-void update_db_subs_timer(db1_con_t *db,db_func_t dbf, shtable_t hash_table,
+void update_db_subs_timer(db1_con_t *db,db_func_t *dbf, shtable_t hash_table,
 	int htable_size, int no_lock, handle_expired_func_t handle_expired_func);
 
-typedef void (*update_db_subs_t)(db1_con_t * ,db_func_t ,shtable_t ,int ,int ,
+typedef void (*update_db_subs_t)(db1_con_t* ,db_func_t* ,shtable_t ,int ,int ,
 		handle_expired_func_t);
 
 int extract_sdialog_info_ex(subs_t* subs,struct sip_msg* msg, uint32_t min_expire,

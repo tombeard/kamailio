@@ -21,7 +21,7 @@
  */
 
 /**
- * \file
+ * \ingroup dtrie
  * \brief Trie datastructure with utility functions
  *
  * Provides a generic trie datastructure and utility functions to
@@ -34,6 +34,7 @@
  * available for matching. The trie is setup in shared memory.
  * - Module: \ref carrierroute
  * - Module: \ref userblacklist
+ * @{
  */
 
 
@@ -100,7 +101,8 @@ void dtrie_delete(struct dtrie_node_t *root, struct dtrie_node_t *node,
 }
 
 
-void dtrie_destroy(struct dtrie_node_t **root, dt_delete_func_t delete_payload, const unsigned int branches)
+void dtrie_destroy(struct dtrie_node_t **root, dt_delete_func_t delete_payload,
+		const unsigned int branches)
 {
 	if ((root!=NULL) && (*root!=NULL)) {
 		dtrie_delete(*root, *root, delete_payload, branches);
@@ -119,13 +121,13 @@ void dtrie_clear(struct dtrie_node_t *root, dt_delete_func_t delete_payload,
 }
 
 
-int dtrie_insert(struct dtrie_node_t *root, const char *number, const unsigned int numberlen,
+int dtrie_insert(struct dtrie_node_t *root, const char *number,
+		const unsigned int numberlen,
 		void *data, const unsigned int branches)
 {
 	struct dtrie_node_t *node = root;
 	unsigned char digit, i=0;
 
-	if (node == NULL) return -1;
 	if (root == NULL) return -1;
 	if (number == NULL) return -1;
 
@@ -151,7 +153,9 @@ int dtrie_insert(struct dtrie_node_t *root, const char *number, const unsigned i
 				return -1;
 			}
 
-			LM_DBG("allocate %lu bytes for node at %p\n", (long unsigned)sizeof(struct dtrie_node_t), node->child[digit]);
+			LM_DBG("allocate %lu bytes for node at %p\n",
+					(long unsigned)sizeof(struct dtrie_node_t),
+					node->child[digit]);
 			memset(node->child[digit], 0, sizeof(struct dtrie_node_t));
 
 			node->child[digit]->child = shm_malloc(sizeof(struct dtrie_node_t *) * branches);
@@ -174,7 +178,8 @@ int dtrie_insert(struct dtrie_node_t *root, const char *number, const unsigned i
 }
 
 
-unsigned int dtrie_size(const struct dtrie_node_t *root, const unsigned int branches)
+unsigned int dtrie_size(const struct dtrie_node_t *root,
+		const unsigned int branches)
 {
 	unsigned int i, sum = 0;
 
@@ -188,7 +193,8 @@ unsigned int dtrie_size(const struct dtrie_node_t *root, const unsigned int bran
 }
 
 
-unsigned int dtrie_loaded_nodes(const struct dtrie_node_t *root, const unsigned int branches)
+unsigned int dtrie_loaded_nodes(const struct dtrie_node_t *root,
+		const unsigned int branches)
 {
 	unsigned int i, sum = 0;
 
@@ -204,7 +210,8 @@ unsigned int dtrie_loaded_nodes(const struct dtrie_node_t *root, const unsigned 
 }
 
 
-unsigned int dtrie_leaves(const struct dtrie_node_t *root, const unsigned int branches)
+unsigned int dtrie_leaves(const struct dtrie_node_t *root,
+		const unsigned int branches)
 {
 	unsigned int i, sum = 0, leaf = 1;
 
@@ -222,13 +229,13 @@ unsigned int dtrie_leaves(const struct dtrie_node_t *root, const unsigned int br
 
 
 void **dtrie_longest_match(struct dtrie_node_t *root, const char *number,
-		const unsigned int numberlen, int *nmatchptr, const unsigned int branches)
+		const unsigned int numberlen, int *nmatchptr,
+		const unsigned int branches)
 {
 	struct dtrie_node_t *node = root;
 	unsigned char digit, i = 0;
 	void **ret = NULL;
 
-	if (node == NULL) return NULL;
 	if (root == NULL) return NULL;
 	if (number == NULL) return NULL;
 
@@ -269,3 +276,5 @@ void **dtrie_contains(struct dtrie_node_t *root, const char *number,
 	if (nmatch == numberlen) return ret;
 	return NULL;
 }
+
+/** @} */

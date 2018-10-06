@@ -30,6 +30,7 @@
 #include "ul_db_del.h"
 #include "ul_db_query.h"
 #include "ul_check.h"
+#include "config.h"
 #include <unistd.h>
 
 ul_db_handle_t dbh_tmp;
@@ -59,7 +60,7 @@ int ul_db_init(void) {
 	
 	memset(results, 0, sizeof(results));
 
-	if(db_master_write){
+	if(write_on_master_db_shared->val){
 		if(db_bind_mod(mdb.write.url, &mdb.write.dbf) < 0) {
 			LM_ERR("could not bind api for write db.\n");
 			return -1;
@@ -101,13 +102,16 @@ int ul_db_child_init(void) {
 	if(ul_db_child_locnr_init() == -1) return -1;
 	
 	LM_INFO("location number is %d\n", max_loc_nr);
-	if(db_master_write){
+        lock_get(&write_on_master_db_shared->lock);
+	if(write_on_master_db_shared->val){
 		if((mdb.write.dbh  = mdb.write.dbf.init(mdb.write.url)) == NULL) {
 			LM_ERR("could not connect to sip master db (write).\n");
+			lock_release(&write_on_master_db_shared->lock);
 			return -1;
 		}
 		LM_INFO("write db connection for children initialized");
 	}
+	lock_release(&write_on_master_db_shared->lock);
 	return 0;
 }
 
@@ -145,10 +149,13 @@ int db_handle_error(ul_db_handle_t * handle, int no) {
 		LM_ERR("NULL pointer in parameter.\n");
 		return -1;
 	}
-	
-	if(!db_master_write){
+
+	lock_get(&write_on_master_db_shared->lock);
+	if(!write_on_master_db_shared->val){
+		lock_release(&write_on_master_db_shared->lock);
 		return 0;
 	}
+	lock_release(&write_on_master_db_shared->lock);
 
 	query_len = 35 + reg_table.len
 			+ error_col.len * 2 + id_col.len;
@@ -162,26 +169,29 @@ int db_handle_error(ul_db_handle_t * handle, int no) {
 		LM_ERR("can't get db.\n");
 		return -1;
 	}
-	
-	if (sprintf(query, "UPDATE %.*s "
-				   "SET %.*s=%.*s+1 "
-				   "WHERE %.*s=%i "
-				   "AND %.*s=%i",
-				   reg_table.len, reg_table.s,
-				   error_col.len, error_col.s, error_col.len, error_col.s, 
-				   id_col.len, id_col.s, handle->id,
-		   		   num_col.len, num_col.s, db->no) < 0) {
-		LM_ERR("could not print the query\n");
-		return -1;
-	}
-	tmp.s = query;
-	tmp.len = strlen(query);
 
-	if (mdb.write.dbf.raw_query (mdb.write.dbh, &tmp, NULL)) {
-		LM_ERR("error in database update.\n");
-		return -1;
+	if (db->errors < cfg_get(p_usrloc, p_usrloc_cfg, db_err_threshold)) {
+		if (sprintf(query, "UPDATE %.*s "
+						"SET %.*s=%.*s+1 "
+						"WHERE %.*s=%i "
+						"AND %.*s=%i",
+						reg_table.len, reg_table.s,
+						error_col.len, error_col.s, error_col.len, error_col.s,
+						id_col.len, id_col.s, handle->id,
+						num_col.len, num_col.s, db->no) < 0) {
+			LM_ERR("could not print the query\n");
+			return -1;
+		}
+
+		tmp.s = query;
+		tmp.len = strlen(query);
+
+		if (mdb.write.dbf.raw_query (mdb.write.dbh, &tmp, NULL)) {
+			LM_ERR("error in database update.\n");
+			return -1;
+		}
 	}
-	
+
 	for(i=0; i<DB_NUM; i++){
 		if (handle->db[i].dbh && handle->db[i].dbf.close){
 			handle->db[i].dbf.close(handle->db[i].dbh);
@@ -196,8 +206,8 @@ int db_handle_error(ul_db_handle_t * handle, int no) {
 	refresh_handle(handle, &dbh_tmp, 0);
 	LM_ERR("error on id %i, db %i, "
 		    "errors occurred: %i, threshold: %i\n",
-		handle->id, db->no, db->errors, db_error_threshold);
-	if(db->errors >= db_error_threshold) {
+		handle->id, db->no, db->errors, cfg_get(p_usrloc, p_usrloc_cfg, db_err_threshold));
+	if(db->errors >= cfg_get(p_usrloc, p_usrloc_cfg, db_err_threshold)) {
 		LM_DBG("db_handle_error: now doing failover");
 		if((db_failover(&mdb.write.dbf, mdb.write.dbh, handle, no)) < 0) {
 			LM_ERR("error in doing failover.\n");
@@ -368,9 +378,12 @@ int ul_db_query(str * table, str * first, str * second, db1_con_t *** _r_h,
 		LM_ERR("could not retrieve db handle.\n");
 		return -1;
 	}
-	if((ret = db_query(handle, _r_h, &f, table, _k, _op, _v, _c, _n, _nc, _o, _r, db_master_write)) < 0){
+	lock_get(&write_on_master_db_shared->lock);
+	if((ret = db_query(handle, _r_h, &f, table, _k, _op, _v, _c, _n, _nc, _o, _r, write_on_master_db_shared->val)) < 0){
+		lock_release(&write_on_master_db_shared->lock);
 		return ret;
 	}
+	lock_release(&write_on_master_db_shared->lock);
 	add_dbf(*_r, f);
 	return ret;
 }
@@ -388,25 +401,34 @@ int ul_db_free_result(db1_con_t ** dbh, db1_res_t * res){
 }
 
 int db_reactivate(ul_db_handle_t * handle, int no){
-	if(!db_master_write){
+	lock_get(&write_on_master_db_shared->lock);
+	if(!write_on_master_db_shared->val){
+		lock_release(&write_on_master_db_shared->lock);
 		LM_ERR("running in read only mode, abort.\n");
 		return -1;
 	}
+	lock_release(&write_on_master_db_shared->lock);
 	return db_failover_reactivate(&mdb.write.dbf, mdb.write.dbh, handle, no);
 }
 
 int db_reset_failover_time(ul_db_handle_t * handle, int no){
-	if(!db_master_write){
+	lock_get(&write_on_master_db_shared->lock);
+	if(!write_on_master_db_shared->val){
+		lock_release(&write_on_master_db_shared->lock);
 		LM_ERR("running in read only mode, abort.\n");
 		return -1;
 	}
+	lock_release(&write_on_master_db_shared->lock);
 	return db_failover_reset(&mdb.write.dbf, mdb.write.dbh, handle->id, no);
 }
 
 int ul_db_check(ul_db_handle_t * handle){
-	if(db_master_write){
+	lock_get(&write_on_master_db_shared->lock);
+	if(write_on_master_db_shared->val){
+		lock_release(&write_on_master_db_shared->lock);
 		return check_handle(&mdb.write.dbf, mdb.write.dbh, handle);
 	} else {
+		lock_release(&write_on_master_db_shared->lock);
 		LM_ERR("checking is useless in read-only mode\n");
 		return 0;
 	}

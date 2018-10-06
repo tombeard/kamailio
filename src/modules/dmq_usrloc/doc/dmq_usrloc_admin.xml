@@ -46,7 +46,7 @@
 	<section id="usrloc_dmq.p.enable">
 		<title><varname>enable</varname> (int)</title>
 		<para>
-			The parameter controls whetner the replication is active or not.
+			The parameter controls whether the replication is active or not.
 			The value can be:
 			<itemizedlist>
 			<listitem>
@@ -78,7 +78,7 @@ modparam("dmq_usrloc", "enable", 1)
 	<section id="usrloc_dmq.p.sync">
 		<title><varname>sync</varname> (int)</title>
 		<para>
-			The parameter controls whetner to request synchronization of all
+			The parameter controls whether to request synchronization of all
 			usrloc records at startup.
 			The value can be:
 			<itemizedlist>
@@ -111,7 +111,7 @@ modparam("dmq_usrloc", "sync", 0)
 	<section id="usrloc_dmq.p.batch_size">
 		<title><varname>batch_size</varname> (int)</title>
 		<para>
-			The parameter controls whetner to throttle synchronization of
+			The parameter controls whether to throttle synchronization of
 			all contacts in batches. Once a batch of SIP requests is sent out,
 			then sleep for 'batch_usleep' microseconds.
 			The value can be:
@@ -145,7 +145,7 @@ modparam("dmq_usrloc", "batch_size", 4000)
 	<section id="usrloc_dmq.p.batch_usleep">
 		<title><varname>batch_usleep</varname> (int)</title>
 		<para>
-			The parameter controls whetner to throttle synchronization of
+			The parameter controls whether to throttle synchronization of
 			all contacts in batches. Once a batch of SIP requests is sent out,
 			then sleep for 'batch_usleep' microseconds.
 			The value can be:
@@ -177,6 +177,57 @@ modparam("dmq_usrloc", "batch_usleep", 1000)
 </programlisting>
 	</example>
 	</section>
+	<section id="usrloc_dmq.p.batch_msg_size">
+		<title><varname>batch_msg_size</varname> (int)</title>
+		<para>
+			The parameter controls the size of the messages during a sync. 
+			This is to make sure the messages are never larger then 65536 (the maximum datagram size).
+		</para>
+		<para>
+			Note that batch_msg_contacts will also be checked.
+		</para>
+		<para>
+		<emphasis>
+			Default value is 60000.
+			Maximum value is 60000.
+		</emphasis>
+		</para>
+		<example>
+		<title>Set <varname>batch_msg_size</varname> parameter</title>
+		<programlisting format="linespecific">
+...
+modparam("dmq_usrloc", "batch_msg_contacts", 50)  # 50 contacts / message
+modparam("dmq_usrloc", "batch_msg_size", 500000)
+# with this config, when doing a full sync, each message will be sent a soon as the body is larger 50K or contains 50 contacts
+...
+</programlisting>
+	</example>
+	</section>
+	<section id="usrloc_dmq.p.batch_msg_contacts">
+		<title><varname>batch_msg_contacts</varname> (int)</title>
+		<para>
+			The parameter controls the amount of contact per message/transaction during a sync.
+		</para>
+		<para>
+			Note that batch_msg_size will also be checked.
+		</para>
+		<para>
+		<emphasis>
+			Default value is 1.
+			Maximum value is 150.
+		</emphasis>
+		</para>
+		<example>
+		<title>Set <varname>batch_msg_contacts</varname> parameter</title>
+		<programlisting format="linespecific">
+...
+modparam("dmq_usrloc", "batch_msg_contacts", 50)  # 50 contacts / message
+modparam("dmq_usrloc", "batch_size", 10000)       # 10000 contacts / batch
+modparam("dmq_usrloc", "batch_usleep", 500000)    # one batch every 500ms
+# syncing 20K contacts/second with 50 contacts/message
+...
+</programlisting>
+	</example>
 	</section>
 
 	<section id="usrloc_dmq.p.usrloc_domain">
@@ -197,6 +248,7 @@ modparam("dmq_usrloc", "usrloc_domain", "my_domain")
 ...
 </programlisting>
 		</example>
+	</section>
 	</section>
 
 </chapter>

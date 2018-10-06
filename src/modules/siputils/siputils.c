@@ -137,6 +137,8 @@ static cmd_export_t cmds[]={
 		free_fixup_get_uri_param, REQUEST_ROUTE|LOCAL_ROUTE},
 	{"tel2sip", (cmd_function)tel2sip, 3, fixup_tel2sip, 0,
 		REQUEST_ROUTE|FAILURE_ROUTE|BRANCH_ROUTE|ONREPLY_ROUTE},
+	{"is_uri",            (cmd_function)is_uri,           1, fixup_spve_null,
+		fixup_free_spve_null, ANY_ROUTE},
 	{"is_e164",            (cmd_function)is_e164,           1, fixup_pvar_null,
 		fixup_free_pvar_null, REQUEST_ROUTE|FAILURE_ROUTE|LOCAL_ROUTE},
 	{"is_uri_user_e164",   (cmd_function)w_is_uri_user_e164,  1, fixup_pvar_null,
@@ -210,18 +212,16 @@ static pv_export_t mod_pvs[] =  {
 };
 
 struct module_exports exports= {
-	"siputils",
+	"siputils",      /* module name */
 	DEFAULT_DLFLAGS, /* dlopen flags */
-	cmds,            /* Exported functions */
+	cmds,            /* exported functions */
 	params,          /* param exports */
-	0,               /* exported statistics */
-	0,               /* exported MI functions */
+	0,               /* exported RPC functions */
 	mod_pvs,         /* exported pseudo-variables */
-	0,               /* extra processes */
+	0,               /* response function */
 	mod_init,        /* initialization function */
-	0,               /* Response function */
-	mod_destroy,     /* Destroy function */
-	0,               /* Child init function */
+	0,               /* child init function */
+	mod_destroy      /* destroy function */
 };
 
 

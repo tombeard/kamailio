@@ -43,6 +43,7 @@
 #include "../../core/script_cb.h"
 #include "../../core/parser/digest/digest.h"
 #include "../../core/parser/parse_from.h"
+#include "../../core/kemi.h"
 #include "../dialog/dlg_load.h"
 #include "../dialog/dlg_hash.h"
 
@@ -90,6 +91,7 @@ typedef struct AVP_Param {
 typedef struct AVP_List {
     pv_spec_p pv;
     str name;
+    char *orig;
     struct AVP_List *next;
 } AVP_List;
 
@@ -170,14 +172,12 @@ struct module_exports exports = {
     DEFAULT_DLFLAGS, // dlopen flags
     commands,        // exported functions
     parameters,      // exported parameters
-    NULL,            // exported statistics
-    NULL,            // exported MI functions
-    NULL,            // exported pseudo-variables
-    NULL,            // extra processes
+    0,               // exported RPC commands
+    0,               // exported pseudo-variables
+    0,               // reply processing function
     mod_init,        // module init function (before fork. kids will inherit)
-    NULL,            // reply processing function
-    destroy,         // destroy function
-    child_init       // child init function
+    child_init,      // child init function
+    destroy          // destroy function
 };
 
 
@@ -217,13 +217,13 @@ typedef struct CallInfo {
 #define CHECK_COND(cond) \
     if ((cond) == 0) { \
         LM_ERR("malformed modparam\n"); \
-        return -1;                            \
+        goto error;                     \
     }
 
 #define CHECK_ALLOC(p) \
     if (!(p)) {    \
         LM_ERR("no memory left\n"); \
-        return -1;    \
+        goto error;    \
     }
 
 
@@ -241,9 +241,10 @@ destroy_list(AVP_List *list) {
 
 
 int
-parse_param(void *val, AVP_List** avps) {
+cc_parse_param(void *val, AVP_List** avps) {
 
-    char *p;
+    char *p = NULL;
+    char *p0 = NULL;
     str s, content;
     AVP_List *mp = NULL;
 
@@ -252,21 +253,28 @@ parse_param(void *val, AVP_List** avps) {
     content.s = (char*) val;
     content.len = strlen(content.s);
 
+	if(content.len==0) {
+		LM_ERR("empty parameter\n");
+		return -1;
+	}
 
-    p = (char*) pkg_malloc (content.len + 1);
-    CHECK_ALLOC(p);
+    p0 = (char*) pkg_malloc (content.len + 1);
+    CHECK_ALLOC(p0);
+    memset(p0, 0, content.len + 1);
+    p = p0;
 
     p[content.len] = '\0';
     memcpy(p, content.s, content.len);
-
 
     for (;*p != '\0';) {
 
         mp = (AVP_List*) pkg_malloc (sizeof(AVP_List));
         CHECK_ALLOC(mp);
+        memset(mp, 0, sizeof(AVP_List));
         mp->next = *avps;
         mp->pv = (pv_spec_p) pkg_malloc (sizeof(pv_spec_t));
         CHECK_ALLOC(mp->pv);
+        memset(mp->pv, 0, sizeof(pv_spec_t));
 
         for (; isspace(*p); p++);
         CHECK_COND(*p != '\0');
@@ -291,32 +299,53 @@ parse_param(void *val, AVP_List** avps) {
         s.len = strlen(p);
 
         p = pv_parse_spec(&s, mp->pv);
+        if(p==NULL) {
+            LM_ERR("failed to parse pv spec\n");
+            goto error;
+        }
 
         for (; isspace(*p); p++);
+
         *avps = mp;
     }
 
+    if(mp==0) {
+        pkg_free(p0);
+    } else {
+        mp->orig = p0;
+    }
+
     return 0;
+
+error:
+	if(mp) {
+		if(mp->pv) {
+			pkg_free(mp->pv);
+		}
+		pkg_free(mp);
+	}
+    if(p0) pkg_free(p0);
+	return -1;
 }
 
 
 int
 parse_param_init(unsigned int type, void *val) {
-    if (parse_param(val, &cc_init_avps) == -1)
+    if (cc_parse_param(val, &cc_init_avps) == -1)
         return E_CFG;
     return 0;
 }
 
 int
 parse_param_start(unsigned int type, void *val) {
-    if (parse_param(val, &cc_start_avps) == -1)
+    if (cc_parse_param(val, &cc_start_avps) == -1)
         return E_CFG;
     return 0;
 }
 
 int
 parse_param_stop(unsigned int type, void *val) {
-    if (parse_param(val, &cc_stop_avps) == -1)
+    if (cc_parse_param(val, &cc_stop_avps) == -1)
         return E_CFG;
     return 0;
 }
@@ -567,6 +596,7 @@ make_custom_request(struct sip_msg *msg, CallInfo *call)
 {
     static char request[8192];
     int len = 0;
+    int len0 = 0;
     AVP_List *al;
     pv_value_t pt;
 
@@ -587,21 +617,26 @@ make_custom_request(struct sip_msg *msg, CallInfo *call)
     }
 
     for (; al; al = al->next) {
-        pv_get_spec_value(msg, al->pv, &pt);
+        if(pv_get_spec_value(msg, al->pv, &pt)<0) {
+            LM_ERR("failed to get pv value\n");
+            return NULL;
+        }
         if (pt.flags & PV_VAL_INT) {
-            len += snprintf(request + len, sizeof(request),
+            len += snprintf(request + len0, sizeof(request)-len0,
                       "%.*s = %d ", al->name.len, al->name.s,
                    pt.ri);
         } else    if (pt.flags & PV_VAL_STR) {
-            len += snprintf(request + len, sizeof(request),
+            len += snprintf(request + len0, sizeof(request)-len0,
                       "%.*s = %.*s ", al->name.len, al->name.s,
                    pt.rs.len, pt.rs.s);
         }
 
-          if (len >= sizeof(request)) {
-               LM_ERR("callcontrol request is longer than %ld bytes\n", (unsigned long)sizeof(request));
+        if (len >= sizeof(request)-len0) {
+            LM_ERR("callcontrol request is longer than %ld bytes\n",
+                    (unsigned long)sizeof(request));
             return NULL;
-             }
+        }
+        len0 = len;
     }
 
 
@@ -1031,8 +1066,7 @@ __dialog_loaded(struct dlg_cell *dlg, int type, struct dlg_cb_params *_params)
 //  -2 - Locked
 //  -3 - No provider
 //  -5 - Internal error (message parsing, communication, ...)
-static int
-CallControl(struct sip_msg *msg, char *str1, char *str2)
+static int ki_call_control(sip_msg_t *msg)
 {
     int result;
 
@@ -1054,6 +1088,11 @@ CallControl(struct sip_msg *msg, char *str1, char *str2)
     return result;
 }
 
+static int
+CallControl(struct sip_msg *msg, char *str1, char *str2)
+{
+    return ki_call_control(msg);
+}
 
 // Module management: initialization/destroy/function-parameter-fixing/...
 //
@@ -1206,4 +1245,26 @@ postprocess_request(struct sip_msg *msg, unsigned int flags, void *_param)
     return 1;
 }
 
+/**
+ *
+ */
+/* clang-format off */
+static sr_kemi_t sr_kemi_call_control_exports[] = {
+	{ str_init("call_control"), str_init("call_control"),
+		SR_KEMIP_INT, ki_call_control,
+		{ SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE,
+			SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE }
+	},
 
+	{ {0, 0}, {0, 0}, 0, NULL, { 0, 0, 0, 0, 0, 0 } }
+};
+/* clang-format on */
+
+/**
+ *
+ */
+int mod_register(char *path, int *dlflags, void *p1, void *p2)
+{
+	sr_kemi_modules_add(sr_kemi_call_control_exports);
+	return 0;
+}

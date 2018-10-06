@@ -25,7 +25,7 @@
 #include <string.h>/*strcmp,memset*/
 #include <errno.h>/*errno*/
 #include <unistd.h>/*close(),read(),pipe,fork,pid_t*/
-#include <sys/poll.h>/*poll*/
+#include <poll.h>/*poll*/
 #include <signal.h>/*signal*/
 #include <time.h>/*time*/
 #include <string.h>/*memcmp*/
@@ -183,7 +183,7 @@ int dispatcher_main_loop(void)
       sig_flag=0;
       clean_index=0;
       LM_INFO("polling [2 ServSock] [1 pipe] [%d App Servers]"
-			  " [%d Uncomplete AS]\n",as_nr,unc_as_nr);
+			  " [%d Incomplete AS]\n",as_nr,unc_as_nr);
       poll_events = poll(poll_fds,3+unc_as_nr+as_nr,-1);
       if (poll_events == -1) {
 	 if(errno==EINTR){

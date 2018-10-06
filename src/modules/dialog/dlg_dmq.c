@@ -35,9 +35,10 @@ dmq_api_t dlg_dmqb;
 dmq_peer_t* dlg_dmq_peer = NULL;
 dmq_resp_cback_t dlg_dmq_resp_callback = {&dlg_dmq_resp_callback_f, 0};
 
-int dmq_send_all_dlgs();
+int dmq_send_all_dlgs(dmq_node_t* dmq_node);
 int dlg_dmq_request_sync();
 
+extern int dlg_enable_stats;
 
 /**
 * @brief add notification peer
@@ -113,6 +114,7 @@ int dlg_dmq_handle_msg(struct sip_msg* msg, peer_reponse_t* resp, dmq_node_t* no
 	unsigned int init_ts = 0, start_ts = 0, lifetime = 0;
 	unsigned int state = 1;
 	srjson_t *vj;
+	int newdlg = 0;
 
 	/* received dmq message */
 	LM_DBG("dmq message received\n");
@@ -246,6 +248,7 @@ int dlg_dmq_handle_msg(struct sip_msg* msg, peer_reponse_t* resp, dmq_node_t* no
 				/* prevent DB sync */
 				dlg->dflags &= ~(DLG_FLAG_NEW|DLG_FLAG_CHANGED);
 				dlg->iflags |= DLG_IFLAG_DMQ_SYNC;
+				newdlg = 1;
 			} else {
 				/* remove existing profiles */
 				if (dlg->profile_links!=NULL) {
@@ -323,6 +326,13 @@ int dlg_dmq_handle_msg(struct sip_msg* msg, peer_reponse_t* resp, dmq_node_t* no
 								dlg, dlg->h_entry, dlg->h_id);
 						}
 					}
+
+					/* remove dialog from profiles when no longer active */
+					if (dlg->profile_links!=NULL) {
+						destroy_linkers(dlg->profile_links);
+						dlg->profile_links = NULL;
+					}
+
 					/* prevent DB sync */
 					dlg->dflags |= DLG_FLAG_NEW;
 					/* keep dialog around for a bit, to prevent out-of-order
@@ -333,6 +343,13 @@ int dlg_dmq_handle_msg(struct sip_msg* msg, peer_reponse_t* resp, dmq_node_t* no
 					LM_ERR("unhandled state update to state %u\n", state);
 					dlg_unref(dlg, unref);
 					goto error;
+			}
+			if(newdlg==1) {
+				if (state==DLG_STATE_CONFIRMED_NA || state==DLG_STATE_CONFIRMED) {
+					if_update_stat(dlg_enable_stats, active_dlgs, 1);
+				} else if (dlg->state==DLG_STATE_EARLY) {
+					if_update_stat(dlg_enable_stats, early_dlgs, 1);
+				}
 			}
 			dlg->state = state;
 			break;
@@ -356,8 +373,14 @@ int dlg_dmq_handle_msg(struct sip_msg* msg, peer_reponse_t* resp, dmq_node_t* no
 						dlg, dlg->h_entry, dlg->h_id);
 				}
 			}
+			if (state==DLG_STATE_CONFIRMED_NA || state==DLG_STATE_CONFIRMED) {
+				if_update_stat(dlg_enable_stats, active_dlgs, -1);
+			} else if (dlg->state==DLG_STATE_EARLY) {
+				if_update_stat(dlg_enable_stats, early_dlgs, -1);
+			}
 			/* prevent DB sync */
 			dlg->dflags |= DLG_FLAG_NEW;
+			dlg->iflags &= ~DLG_IFLAG_DMQ_SYNC;
 			unref++;
 			break;
 

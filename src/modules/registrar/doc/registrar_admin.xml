@@ -158,8 +158,8 @@ modparam("registrar", "default_expires", 1800)
 		<para>
 		This parameter specifies that the expiry used for newly created usrloc records
 		are not fixed, but a random value in the interval <quote>[default_expires-default_expires_range%, default_expires]</quote>.
-		The value is between 0 and 100 and represent the maximim percentage from expires that
-		will be substracted when computing the value. Default is 0, meaning default_expires
+		The value is between 0 and 100 and represent the maximum percentage from expires that
+		will be subtracted when computing the value. Default is 0, meaning default_expires
 		is left unmodified. This parameter can be modified via the &kamailio; config framework.
 		</para>
 		<para>
@@ -515,7 +515,8 @@ modparam("registrar", "sock_hdr_name", "Sock-Info")
 		<title><varname>method_filtering</varname> (integer)</title>
 		<para>
 		Tells if the contact filtering based on supported methods should be
-		performed during lookup. It's enabled only if it has a non zero 
+		performed during lookup on initial requests without to-tag.
+        It's enabled only if it has a non zero 
 		value. Supported methods are listed in the <quote>Allow:</quote> 
 		header in the REGISTER message and stored in the location database.
 		</para>
@@ -702,7 +703,7 @@ modparam("registrar", "reg_callid_avp", "$avp(s:avp)")
 		<listitem>
 			<para>
 				<emphasis>socket</emphasis> - the string representing the
-				socket on which the register rquest was received, as alternative
+				socket on which the register request was received, as alternative
 				to using the sock_hdr.
 			</para>
 		</listitem>
@@ -947,19 +948,50 @@ modparam("registrar", "flow_timer", 25)
 		</para>
 		<para>
 		<emphasis>
-			Default value is 255.
+			Default value is 512.
 		</emphasis>
 		</para>
 		<example>
 		<title>Set <varname>contact_max_size</varname> parameter</title>
 		<programlisting format="linespecific">
 ...
-modparam("registrar", "contact_max_size", 500)
+modparam("registrar", "contact_max_size", 1024)
 ...
 		</programlisting>
 		</example>
 	</section>
 
+	<section id="registrar.p.event_callback">
+		<title><varname>event_callback</varname> (str)</title>
+		<para>
+			The name of the function in the KEMI configuration file (embedded
+			scripting language such as Lua, Python, ...) to be executed instead
+			of event_route[...] blocks.
+		</para>
+		<para>
+			The function receives a string parameter with the name of the event.
+            The only possible value currently is 'usrloc:contact-expired'.
+		</para>
+		<para>
+		<emphasis>
+			Default value is 'empty' (no function is executed for events).
+		</emphasis>
+		</para>
+		<example>
+		<title>Set <varname>event_callback</varname> parameter</title>
+		<programlisting format="linespecific">
+...
+modparam("registrar", "event_callback", "ksr_registrar_event")
+...
+-- event callback function implemented in Lua
+function ksr_registrar_event(evname)
+    KSR.info( "Expired contact for " .. KSR.pv.getw("$ulc(exp=>aor)") .. "\n");
+	return 1;
+end
+...
+        </programlisting>
+		</example>
+	</section>
 	</section>
 
 	
@@ -1016,7 +1048,7 @@ modparam("registrar", "contact_max_size", 500)
 					</para>
 				</listitem>
 			</itemizedlist>
-			<para>The flags may be given in decimal or hexa format.</para>
+			<para>The flags may be given in decimal or hexadecimal format.</para>
 		</listitem>
 		<listitem>
 			<para>
@@ -1077,8 +1109,9 @@ save("location", "0x00", "sip:test@kamailio.org");
 		the message (depending on append_branches parameter value).
 		</para>
 		<para>
-		If the <varname>method_filtering</varname> option is enabled,
-		the <function>lookup</function> function
+		If the <varname>method_filtering</varname> option is enabled and
+        request is initial request without to-tag, the
+        <function>lookup</function> function 
 		will return only the contacts that support the method of the
 		processed request.
 		</para>
@@ -1269,7 +1302,8 @@ if (registered("location","$rz:$Au", 2)) {
 		<itemizedlist>
 		<listitem>
 			<para>
-			<emphasis>hdr_name</emphasis> - header name to be used.
+			<emphasis>hdr_name</emphasis> - header name to be used, it can be
+			a static string or contain variables.
 			</para>
 		</listitem>
 		</itemizedlist>
@@ -1474,7 +1508,7 @@ event_route[usrloc:contact-expired] {
 		</para>
 	</section>
 	<section>
-		<title><varname>defaults_expires</varname></title>
+		<title><varname>default_expires</varname></title>
 		<para>
 		The value of default_expires parameter.
 		</para>
@@ -1595,7 +1629,11 @@ event_route[usrloc:contact-expired] {
 				<listitem>
 				<para><emphasis>conid</emphasis> - TCP socket internal connection ID ($null if UDP)
 				</para>
-				</listitem>	  
+				</listitem>
+				<listitem>
+				<para><emphasis>server_id</emphasis> - server_id value
+				</para>
+				</listitem>
 			</itemizedlist>
 			<para>
 				The pseudo-variable accepts positive index value to access

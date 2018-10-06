@@ -17,13 +17,10 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License 
- * along with this program; if not, write to the Free Software 
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  *
- * History:
- * --------
- *  2008-08-25  initial version (kd)
  */
 
 #include <stdio.h>
@@ -67,7 +64,7 @@ MODULE_VERSION
 #define DEF_DISABLE_CALLER_PUBLISH_FLAG -1
 #define DEF_DISABLE_CALLEE_PUBLISH_FLAG -1
 
-/* define PUA_DIALOGINFO_DEBUG to activate more verbose 
+/* define PUA_DIALOGINFO_DEBUG to activate more verbose
  * logging and dialog info callback debugging
  */
 /* #define PUA_DIALOGINFO_DEBUG 1 */
@@ -106,9 +103,8 @@ send_publish_t pua_send_publish;
 static int mod_init(void);
 
 
-static cmd_export_t cmds[]=
-{
-	{0, 0, 0, 0, 0, 0} 
+static cmd_export_t cmds[]={
+	{0, 0, 0, 0, 0, 0}
 };
 
 static param_export_t params[]={
@@ -131,18 +127,16 @@ static param_export_t params[]={
 };
 
 struct module_exports exports= {
-	"pua_dialoginfo",    /* module name */
-	DEFAULT_DLFLAGS,     /* dlopen flags */
-	cmds,                /* exported functions */
-	params,              /* exported parameters */
-	0,                   /* exported statistics */
-	0,                   /* exported MI functions */
-	0,                   /* exported pseudo-variables */
-	0,                   /* extra processes */
-	mod_init,            /* module initialization function */
-	0,                   /* response handling function */
-	0,                   /* destroy function */
-	NULL                 /* per-child init function */
+	"pua_dialoginfo",	/* module name */
+	DEFAULT_DLFLAGS,	/* dlopen flags */
+	cmds,				/* exported functions */
+	params,				/* exported parameters */
+	0,					/* RPC method exports */
+	0,					/* exported pseudo-variables */
+	0,					/* response handling function */
+	mod_init,			/* module initialization function */
+	0,					/* per-child init function */
+	0					/* module destroy function */
 };
 
 
@@ -185,8 +179,9 @@ __dialog_cbtest(struct dlg_cell *dlg, int type, struct dlg_cb_params *_params)
 				LM_ERR("bad reply or missing TO header\n");
 				tag.s = 0;
 				tag.len = 0;
-			} else 
+			} else {
 				tag = get_to(msg)->tag_value;
+			}
 		} else {
 			tag = get_to(msg)->tag_value;
 			if (tag.s==0 || tag.len==0) {
@@ -238,10 +233,6 @@ __dialog_cbtest(struct dlg_cell *dlg, int type, struct dlg_cb_params *_params)
 			LM_ERR("dialog callback type 'DLGCB_RESPONSE_WITHIN' received, from=%.*s\n",
 					dlg->from_uri.len, dlg->from_uri.s);
 			break;
-		case DLGCB_MI_CONTEXT:
-			LM_ERR("dialog callback type 'DLGCB_MI_CONTEXT' received, from=%.*s\n",
-					dlg->from_uri.len, dlg->from_uri.s);
-			break;
 		case DLGCB_DESTROY:
 			LM_ERR("dialog callback type 'DLGCB_DESTROY' received, from=%.*s\n",
 					dlg->from_uri.len, dlg->from_uri.s);
@@ -281,14 +272,16 @@ __dialog_sendpublish(struct dlg_cell *dlg, int type, struct dlg_cb_params *_para
 		case DLGCB_EXPIRED:
 			LM_DBG("dialog over, from=%.*s\n", dlginfo->from_uri.len,
 					dlginfo->from_uri.s);
-			if (disable_caller_publish_flag == -1 || !(request && (request->flags & (1<<disable_caller_publish_flag))))
+			if (disable_caller_publish_flag == -1 || !(request
+						&& (request->flags & (1<<disable_caller_publish_flag))))
 			{
 				dialog_publish_multi("terminated", dlginfo->pubruris_caller,
 						&(dlginfo->from_uri), &uri, &(dlginfo->callid), 1,
 						10, 0, 0, &(dlginfo->from_contact),
 						&target, send_publish_flag==-1?1:0);
 			}
-			if (disable_callee_publish_flag == -1 || !(request && (request->flags & (1<<disable_callee_publish_flag))))
+			if (disable_callee_publish_flag == -1 || !(request
+						&& (request->flags & (1<<disable_callee_publish_flag))))
 			{
 				dialog_publish_multi("terminated", dlginfo->pubruris_callee,
 						&uri, &(dlginfo->from_uri), &(dlginfo->callid), 0,
@@ -301,14 +294,16 @@ __dialog_sendpublish(struct dlg_cell *dlg, int type, struct dlg_cb_params *_para
 		case DLGCB_CONFIRMED_NA:
 			LM_DBG("dialog confirmed, from=%.*s\n", dlginfo->from_uri.len,
 					dlginfo->from_uri.s);
-			if (disable_caller_publish_flag == -1 || !(request && (request->flags & (1<<disable_caller_publish_flag))))
+			if (disable_caller_publish_flag == -1 || !(request
+						&& (request->flags & (1<<disable_caller_publish_flag))))
 			{
 				dialog_publish_multi("confirmed", dlginfo->pubruris_caller,
 						&(dlginfo->from_uri), &uri, &(dlginfo->callid), 1,
 						dlginfo->lifetime, 0, 0, &(dlginfo->from_contact), &target,
 						send_publish_flag==-1?1:0);
 			}
-			if (disable_callee_publish_flag == -1 || !(request && (request->flags & (1<<disable_callee_publish_flag))))
+			if (disable_callee_publish_flag == -1 || !(request
+						&& (request->flags & (1<<disable_callee_publish_flag))))
 			{
 				dialog_publish_multi("confirmed", dlginfo->pubruris_callee, &uri,
 						&(dlginfo->from_uri), &(dlginfo->callid), 0,
@@ -347,7 +342,8 @@ __dialog_sendpublish(struct dlg_cell *dlg, int type, struct dlg_cb_params *_para
 						tag.len = 0;
 					}
 				}
-				if (disable_caller_publish_flag == -1 || !(request && (request->flags & (1<<disable_caller_publish_flag))))
+				if (disable_caller_publish_flag == -1 || !(request
+							&& (request->flags & (1<<disable_caller_publish_flag))))
 				{
 					if (caller_confirmed) {
 						dialog_publish_multi("confirmed", dlginfo->pubruris_caller,
@@ -363,7 +359,8 @@ __dialog_sendpublish(struct dlg_cell *dlg, int type, struct dlg_cb_params *_para
 								send_publish_flag==-1?1:0);
 					}
 				}
-				if (disable_callee_publish_flag == -1 || !(request && (request->flags & (1<<disable_callee_publish_flag))))
+				if (disable_callee_publish_flag == -1 || !(request &&
+							(request->flags & (1<<disable_callee_publish_flag))))
 				{
 					dialog_publish_multi("early", dlginfo->pubruris_callee, &uri,
 							&(dlginfo->from_uri), &(dlginfo->callid), 0,
@@ -372,7 +369,8 @@ __dialog_sendpublish(struct dlg_cell *dlg, int type, struct dlg_cb_params *_para
 				}
 
 			} else {
-				if (disable_caller_publish_flag == -1 || !(request && (request->flags & (1<<disable_caller_publish_flag))))
+				if (disable_caller_publish_flag == -1 || !(request &&
+							(request->flags & (1<<disable_caller_publish_flag))))
 				{
 					if (caller_confirmed) {
 						dialog_publish_multi("confirmed", dlginfo->pubruris_caller,
@@ -387,7 +385,8 @@ __dialog_sendpublish(struct dlg_cell *dlg, int type, struct dlg_cb_params *_para
 								&target, send_publish_flag==-1?1:0);
 					}
 				}
-				if (disable_callee_publish_flag == -1 || !(request && (request->flags & (1<<disable_callee_publish_flag))))
+				if (disable_callee_publish_flag == -1 || !(request
+							&& (request->flags & (1<<disable_callee_publish_flag))))
 				{
 					dialog_publish_multi("early", dlginfo->pubruris_callee, &uri,
 							&(dlginfo->from_uri), &(dlginfo->callid), 0,
@@ -399,14 +398,16 @@ __dialog_sendpublish(struct dlg_cell *dlg, int type, struct dlg_cb_params *_para
 		default:
 			LM_ERR("unhandled dialog callback type %d received, from=%.*s\n",
 					type, dlginfo->from_uri.len, dlginfo->from_uri.s);
-			if (disable_caller_publish_flag == -1 || !(request && (request->flags & (1<<disable_caller_publish_flag))))
+			if (disable_caller_publish_flag == -1 || !(request &&
+						(request->flags & (1<<disable_caller_publish_flag))))
 			{
 				dialog_publish_multi("terminated", dlginfo->pubruris_caller,
 						&(dlginfo->from_uri), &uri, &(dlginfo->callid), 1,
 						10, 0, 0, &(dlginfo->from_contact), &target,
 						send_publish_flag==-1?1:0);
 			}
-			if (disable_callee_publish_flag == -1 || !(request && (request->flags & (1<<disable_callee_publish_flag))))
+			if (disable_callee_publish_flag == -1 || !(request &&
+						(request->flags & (1<<disable_callee_publish_flag))))
 			{
 				dialog_publish_multi("terminated", dlginfo->pubruris_callee, &uri,
 						&(dlginfo->from_uri), &(dlginfo->callid), 0,
@@ -601,11 +602,11 @@ struct dlginfo_cell* get_dialog_data(struct dlg_cell *dlg, int type)
 
 #ifdef PUA_DIALOGINFO_DEBUG
 	/* dialog callback testing (registered last to be executed frist) */
-	if (dlg_api.register_dlgcb(dlg, 
+	if (dlg_api.register_dlgcb(dlg,
 				DLGCB_FAILED| DLGCB_CONFIRMED_NA | DLGCB_CONFIRMED
 				| DLGCB_REQ_WITHIN | DLGCB_TERMINATED | DLGCB_EXPIRED
 				| DLGCB_EARLY | DLGCB_RESPONSE_FWDED | DLGCB_RESPONSE_WITHIN
-				| DLGCB_MI_CONTEXT | DLGCB_DESTROY,
+				| DLGCB_DESTROY,
 				__dialog_cbtest, NULL, NULL) != 0) {
 		LM_ERR("cannot register callback for all dialog types\n");
 		free_dlginfo_cell(dlginfo);
@@ -622,7 +623,7 @@ __dialog_created(struct dlg_cell *dlg, int type, struct dlg_cb_params *_params)
 	struct sip_msg *request = _params->req;
 	struct dlginfo_cell *dlginfo;
 
-	if (request->REQ_METHOD != METHOD_INVITE)
+	if (request==NULL || request->REQ_METHOD != METHOD_INVITE)
 		return;
 
 	if(send_publish_flag > -1 && !(request->flags & (1<<send_publish_flag)))
@@ -635,7 +636,8 @@ __dialog_created(struct dlg_cell *dlg, int type, struct dlg_cb_params *_params)
 	if(dlginfo==NULL)
 		return;
 
-	if (disable_caller_publish_flag == -1 || !(request && (request->flags & (1<<disable_caller_publish_flag))))
+	if (disable_caller_publish_flag == -1 || !(request && (request->flags
+					& (1<<disable_caller_publish_flag))))
 	{
 		dialog_publish_multi("Trying", dlginfo->pubruris_caller,
 				&(dlg->from_uri),
@@ -644,7 +646,8 @@ __dialog_created(struct dlg_cell *dlg, int type, struct dlg_cb_params *_params)
 				0, 0, 0, 0, (send_publish_flag==-1)?1:0);
 	}
 
-	if (callee_trying && (disable_callee_publish_flag == -1 || !(request && (request->flags & (1<<disable_callee_publish_flag)))))
+	if (callee_trying && (disable_callee_publish_flag == -1 || !(request
+					&& (request->flags & (1<<disable_callee_publish_flag)))))
 	{
 		dialog_publish_multi("Trying", dlginfo->pubruris_callee,
 				(include_req_uri)?&(dlg->req_uri):&(dlg->to_uri),
@@ -659,7 +662,8 @@ __dialog_loaded(struct dlg_cell *dlg, int type, struct dlg_cb_params *_params)
 {
 	struct dlginfo_cell *dlginfo;
 
-	LM_DBG("INVITE dialog loaded: from=%.*s\n", dlg->from_uri.len, dlg->from_uri.s);
+	LM_DBG("INVITE dialog loaded: from=%.*s\n",
+			dlg->from_uri.len, dlg->from_uri.s);
 
 	dlginfo=get_dialog_data(dlg, type);
 	if(dlginfo!=NULL) {
@@ -680,11 +684,15 @@ static int mod_init(void)
 	str s;
 	pv_spec_t avp_spec;
 
-	if(caller_dlg_var.len<=0)
-		LM_WARN("pubruri_caller_dlg_var is not set - restore on restart disabled\n");
+	if(caller_dlg_var.len<=0) {
+		LM_WARN("pubruri_caller_dlg_var is not set"
+				" - restore on restart disabled\n");
+	}
 
-	if(callee_dlg_var.len<=0)
-		LM_WARN("pubruri_callee_dlg_var is not set - restore on restart disabled\n");
+	if(callee_dlg_var.len<=0) {
+		LM_WARN("pubruri_callee_dlg_var is not set"
+				" - restore on restart disabled\n");
+	}
 
 	bind_pua= (bind_pua_t)find_export("bind_pua", 1,0);
 	if (!bind_pua)
@@ -722,9 +730,9 @@ static int mod_init(void)
 	}
 
 	if(use_pubruri_avps) {
-
-		if(!(pubruri_caller_avp && *pubruri_caller_avp)
-				&& (pubruri_callee_avp && *pubruri_callee_avp)) {
+		LM_DBG("configured to use avps for uri values\n");
+		if((pubruri_caller_avp==NULL || *pubruri_caller_avp==0)
+				|| (pubruri_callee_avp==NULL || *pubruri_callee_avp==0)) {
 			LM_ERR("pubruri_caller_avp and pubruri_callee_avp must be set,"
 					" if use_pubruri_avps is enabled\n");
 			return -1;
@@ -751,7 +759,8 @@ static int mod_init(void)
 			LM_ERR("[%s]- invalid AVP definition\n", pubruri_callee_avp);
 			return -1;
 		}
-
+	} else {
+		LM_DBG("configured to use headers for uri values\n");
 	}
 
 	return 0;

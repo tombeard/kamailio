@@ -111,7 +111,7 @@ int process_contact(udomain_t * domain, urecord_t ** ul_record, str aor, str cal
 	ci.expires = time(0) + expires;
 
 	/* set ruid */
-	if(sruid_next(&_reginfo_sruid) < 0) {
+	if(sruid_next_safe(&_reginfo_sruid) < 0) {
 		LM_ERR("failed to generate ruid");
 	} else {
 		ci.ruid = _reginfo_sruid.uid;
@@ -232,8 +232,8 @@ int process_body(str notify_body, udomain_t * domain) {
 	char * expires_char,  * cseq_char;
 	int cseq = 0;
 	int len;
-	urecord_t * ul_record;
-	ucontact_t * ul_contact;
+	urecord_t * ul_record = NULL;
+	ucontact_t * ul_contact = NULL;
 	struct sip_uri parsed_aor;
 
 	/* Temporary */
@@ -306,9 +306,15 @@ int process_body(str notify_body, udomain_t * domain) {
 					}
 					ul_contact = ul_contact->next;
 				}
+				
 				if (ul.delete_urecord(domain, &aor_key, ul_record) < 0) {
 					LM_ERR("failed to remove record from usrloc\n");
-				}
+				} 
+
+				/* Record deleted, and should not be used anymore */
+				ul_record = NULL;
+				
+				
 				/* If already a registration with contacts was found, then keep that result.
 				   otherwise the result is now "No contacts found" */
 				if (final_result != RESULT_CONTACTS_FOUND) final_result = RESULT_NO_CONTACTS;

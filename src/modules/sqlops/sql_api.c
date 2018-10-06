@@ -262,14 +262,14 @@ int sql_do_query(sql_con_t *con, str *query, sql_result_t *res)
 	if(con->dbf.raw_query(con->dbh, query, &db_res)!=0)
 	{
 		LM_ERR("cannot do the query [%.*s]\n",
-				(query->len>32)?32:query->len, query->s);
+				(query->len>64)?64:query->len, query->s);
 		return -1;
 	}
 
 	if(db_res==NULL || RES_ROW_N(db_res)<=0 || RES_COL_N(db_res)<=0)
 	{
 		LM_DBG("no result after query\n");
-		con->dbf.free_result(con->dbh, db_res);
+		if (db_res) con->dbf.free_result(con->dbh, db_res);
 		return 2;
 	}
 	if(!res)
@@ -394,14 +394,15 @@ int sql_do_query(sql_con_t *con, str *query, sql_result_t *res)
 					res->vals[i][j].value.s.len = 0;
 					continue;
 				}
-				res->vals[i][j].value.s.s 
-					= (char*)pkg_malloc(sv.len*sizeof(char));
+				res->vals[i][j].value.s.s
+					= (char*)pkg_malloc((sv.len+1)*sizeof(char));
 				if(res->vals[i][j].value.s.s==NULL)
 				{
 					LM_ERR("no more memory\n");
 					goto error;
 				}
 				memcpy(res->vals[i][j].value.s.s, sv.s, sv.len);
+				res->vals[i][j].value.s.s[sv.len] = '\0';
 				res->vals[i][j].value.s.len = sv.len;
 			}
 		}
@@ -696,17 +697,27 @@ int sqlops_do_query(str *scon, str *squery, str *sres)
 	sql_con_t *con = NULL;
 	sql_result_t *res = NULL;
 
+	if (scon == NULL || scon->s == NULL)
+	{
+		LM_ERR("invalid connection name\n");
+		goto error;
+	}
+
 	con = sql_get_connection(scon);
 	if(con==NULL)
 	{
 		LM_ERR("invalid connection [%.*s]\n", scon->len, scon->s);
 		goto error;
 	}
-	res = sql_get_result(sres);
-	if(res==NULL)
+	/* Result parameter is optional */
+	if (sres && sres->s)
 	{
-		LM_ERR("invalid result [%.*s]\n", sres->len, sres->s);
-		goto error;
+		res = sql_get_result(sres);
+		if(res==NULL)
+		{
+			LM_ERR("invalid result [%.*s]\n", sres->len, sres->s);
+			goto error;
+		}
 	}
 	if(sql_do_query(con, squery, res)<0)
 		goto error;
@@ -722,6 +733,12 @@ error:
 int sqlops_get_value(str *sres, int i, int j, sql_val_t **val)
 {
 	sql_result_t *res = NULL;
+
+	if (sres == NULL || sres->s == NULL)
+	{
+		LM_ERR("invalid result name\n");
+		goto error;
+	}
 
 	res = sql_get_result(sres);
 	if(res==NULL)
@@ -753,6 +770,12 @@ int sqlops_is_null(str *sres, int i, int j)
 {
 	sql_result_t *res = NULL;
 
+	if (sres == NULL || sres->s == NULL)
+	{
+		LM_ERR("invalid result name\n");
+		goto error;
+	}
+
 	res = sql_get_result(sres);
 	if(res==NULL)
 	{
@@ -783,6 +806,12 @@ int sqlops_get_column(str *sres, int i, str *col)
 {
 	sql_result_t *res = NULL;
 
+	if (sres == NULL || sres->s == NULL)
+	{
+		LM_ERR("invalid result name\n");
+		goto error;
+	}
+
 	res = sql_get_result(sres);
 	if(res==NULL)
 	{
@@ -807,6 +836,12 @@ int sqlops_num_columns(str *sres)
 {
 	sql_result_t *res = NULL;
 
+	if (sres == NULL || sres->s == NULL)
+	{
+		LM_ERR("invalid result name\n");
+		goto error;
+	}
+
 	res = sql_get_result(sres);
 	if(res==NULL)
 	{
@@ -824,6 +859,12 @@ error:
 int sqlops_num_rows(str *sres)
 {
 	sql_result_t *res = NULL;
+
+	if (sres == NULL || sres->s == NULL)
+	{
+		LM_ERR("invalid result name\n");
+		goto error;
+	}
 
 	res = sql_get_result(sres);
 	if(res==NULL)
@@ -843,6 +884,12 @@ void sqlops_reset_result(str *sres)
 {
 	sql_result_t *res = NULL;
 
+	if (sres == NULL || sres->s == NULL)
+	{
+		LM_ERR("invalid result name\n");
+		return;
+	}
+
 	res = sql_get_result(sres);
 	if(res==NULL)
 	{
@@ -860,6 +907,12 @@ void sqlops_reset_result(str *sres)
 int sqlops_do_xquery(sip_msg_t *msg, str *scon, str *squery, str *xavp)
 {
 	sql_con_t *con = NULL;
+
+	if (scon == NULL || scon->s == NULL)
+	{
+		LM_ERR("invalid connection name\n");
+		goto error;
+	}
 
 	con = sql_get_connection(scon);
 	if(con==NULL)

@@ -196,7 +196,7 @@ int parse_avp_db(char *s, struct db_param *dbp, int allow_scheme)
 			if (dbp->a.opd&AVPOPS_VAL_NONE)
 			{
 				LM_ERR("inconsistent usage of "
-					"DB scheme without complet specification of AVP name\n");
+					"DB scheme without complete specification of AVP name\n");
 				goto error;
 			}
 			have_scheme = 1;
@@ -237,7 +237,7 @@ error:
 
 struct fis_param* parse_intstr_value(char *p, int len)
 {
-	struct fis_param *vp;
+	struct fis_param *vp = 0;
 	unsigned int uint;
 	str val_str;
 	int flags;
@@ -260,7 +260,7 @@ struct fis_param* parse_intstr_value(char *p, int len)
 		len -= 2;
 		if (*p==0 || len<=0 )
 		{
-			LM_ERR("parse error arround <%.*s>\n",len,p);
+			LM_ERR("parse error around <%.*s>\n",len,p);
 				goto error;
 		}
 	} else {
@@ -313,6 +313,7 @@ struct fis_param* parse_intstr_value(char *p, int len)
 
 	return vp;
 error:
+	if(vp) pkg_free(vp);
 	return 0;
 }
 

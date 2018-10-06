@@ -27,6 +27,13 @@
 #include <stdlib.h>
 #include <openssl/ssl.h>
 #include <openssl/opensslv.h>
+
+#ifndef OPENSSL_NO_ENGINE
+#include <openssl/engine.h>
+#include "tls_map.h"
+extern EVP_PKEY * tls_engine_private_key(const char* key_id);
+#endif
+
 #if OPENSSL_VERSION_NUMBER >= 0x00907000L
 # include <openssl/ui.h>
 #endif
@@ -124,7 +131,7 @@ static void setup_dh(SSL_CTX *ctx)
 		return;
 	}
 
-#if (OPENSSL_VERSION_NUMBER >= 0x1010000fL)
+#if (OPENSSL_VERSION_NUMBER >= 0x1010000fL) && !defined(LIBRESSL_VERSION_NUMBER)
 	/* libssl >= v1.1.0 */
 	DH_set0_pqg(dh, p, NULL, g);
 #else
@@ -265,6 +272,12 @@ char* tls_domain_str(tls_domain_t* d)
 	p = strcat(p, d->type & TLS_DOMAIN_SRV ? "TLSs<" : "TLSc<");
 	if (d->type & TLS_DOMAIN_DEF) {
 		p = strcat(p, "default>");
+	} else if (d->type & TLS_DOMAIN_ANY) {
+		p = strcat(p, "any:");
+		if(d->server_name.s && d->server_name.len>0) {
+			p = strncat(p, d->server_name.s, d->server_name.len);
+		}
+		p = strcat(p, ">");
 	} else {
 		p = strcat(p, ip_addr2a(&d->ip));
 		p = strcat(p, ":");
@@ -284,7 +297,7 @@ char* tls_domain_str(tls_domain_t* d)
  * @param parent parent domain
  * @return 0 on success, -1 on error
  */
-static int fill_missing(tls_domain_t* d, tls_domain_t* parent)
+static int ksr_tls_fill_missing(tls_domain_t* d, tls_domain_t* parent)
 {
 	if (d->method == TLS_METHOD_UNSPEC) d->method = parent->method;
 	LOG(L_INFO, "%s: tls_method=%d\n", tls_domain_str(d), d->method);
@@ -480,16 +493,25 @@ static int tls_foreach_CTX_in_cfg(tls_domains_cfg_t* cfg,
 int fix_shm_pathname(str* path)
 {
 	str new_path;
-	char* abs_path;
-	
-	if (path->s && path->len && *path->s != '.' && *path->s != '/') {
+	char *abs_path;
+
+	if(path->s && path->len && *path->s != '.' && *path->s != '/') {
 		abs_path = get_abs_pathname(0, path);
-		if (abs_path == 0) return -1;
+		if(abs_path == 0) {
+			LM_ERR("get abs pathname failed\n");
+			return -1;
+		}
 		new_path.len = strlen(abs_path);
 		new_path.s = shm_malloc(new_path.len + 1);
+		if(new_path.s == 0) {
+			LM_ERR("no more shm memory\n");
+			pkg_free(abs_path);
+			return -1;
+		}
 		memcpy(new_path.s, abs_path, new_path.len);
 		new_path.s[new_path.len] = 0;
 		shm_free(path->s);
+		pkg_free(abs_path);
 		*path = new_path;
 	}
 	return 0;
@@ -967,12 +989,20 @@ static int tls_server_name_cb(SSL *ssl, int *ad, void *private)
  * @param d initialized TLS domain
  * @param def default TLS domains
  */
-static int fix_domain(tls_domain_t* d, tls_domain_t* def)
+static int ksr_tls_fix_domain(tls_domain_t* d, tls_domain_t* def)
 {
 	int i;
 	int procs_no;
 
-	if (fill_missing(d, def) < 0) return -1;
+	if (ksr_tls_fill_missing(d, def) < 0) return -1;
+
+	if(d->type & TLS_DOMAIN_ANY) {
+		if(d->server_name.s==NULL || d->server_name.len<0) {
+			LM_ERR("%s: tls domain for any address but no server name\n",
+					tls_domain_str(d));
+			return -1;
+		}
+	}
 
 	procs_no=get_max_procs();
 	d->ctx = (SSL_CTX**)shm_malloc(sizeof(SSL_CTX*) * procs_no);
@@ -987,6 +1017,9 @@ static int fix_domain(tls_domain_t* d, tls_domain_t* def)
 	}
 	memset(d->ctx, 0, sizeof(SSL_CTX*) * procs_no);
 	for(i = 0; i < procs_no; i++) {
+
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
+		/* libssl < 1.1.0 */
 		if(d->method>TLS_USE_TLSvRANGE) {
 			d->ctx[i] = SSL_CTX_new(SSLv23_method());
 		} else {
@@ -999,6 +1032,30 @@ static int fix_domain(tls_domain_t* d, tls_domain_t* def)
 		if(d->method>TLS_USE_TLSvRANGE) {
 			SSL_CTX_set_options(d->ctx[i], (long)ssl_methods[d->method - 1]);
 		}
+#else
+		/* libssl >= 1.1.0 */
+		d->ctx[i] = SSL_CTX_new(sr_tls_methods[d->method - 1].TLSMethod);
+		if (d->ctx[i] == NULL) {
+			ERR("%s: Cannot create SSL context\n", tls_domain_str(d));
+			return -1;
+		}
+		if(d->method>TLS_USE_TLSvRANGE) {
+			if(sr_tls_methods[d->method - 1].TLSMethodMin) {
+				SSL_CTX_set_min_proto_version(d->ctx[i],
+						sr_tls_methods[d->method - 1].TLSMethodMin);
+			}
+		} else {
+			if(sr_tls_methods[d->method - 1].TLSMethodMin) {
+				SSL_CTX_set_min_proto_version(d->ctx[i],
+						sr_tls_methods[d->method - 1].TLSMethodMin);
+			}
+			if(sr_tls_methods[d->method - 1].TLSMethodMax) {
+				SSL_CTX_set_max_proto_version(d->ctx[i],
+						sr_tls_methods[d->method - 1].TLSMethodMax);
+			}
+		}
+#endif
+
 #ifndef OPENSSL_NO_TLSEXT
 		/*
 		* check server domains for server_name extension and register
@@ -1050,12 +1107,12 @@ static int fix_domain(tls_domain_t* d, tls_domain_t* def)
  */
 static int passwd_cb(char *buf, int size, int rwflag, void *filename)
 {
-#if OPENSSL_VERSION_NUMBER >= 0x00907000L	
-	UI             *ui;
-	const char     *prompt;
-	
+#if OPENSSL_VERSION_NUMBER >= 0x00907000L
+	UI *ui;
+	const char *prompt;
+
 	ui = UI_new();
-	if (ui == NULL)
+	if(ui == NULL)
 		goto err;
 
 	prompt = UI_construct_prompt(ui, "passphrase", filename);
@@ -1063,16 +1120,13 @@ static int passwd_cb(char *buf, int size, int rwflag, void *filename)
 	UI_process(ui);
 	UI_free(ui);
 	return strlen(buf);
- 
- err:
+
+err:
 	ERR("passwd_cb: Error in passwd_cb\n");
-	if (ui) {
-		UI_free(ui);
-	}
 	return 0;
-	
+
 #else
-	if (des_read_pw_string(buf, size-1, "Enter Private Key password:", 0)) {
+	if(des_read_pw_string(buf, size - 1, "Enter Private Key password:", 0)) {
 		ERR("Error in passwd_cb\n");
 		return 0;
 	}
@@ -1080,7 +1134,109 @@ static int passwd_cb(char *buf, int size, int rwflag, void *filename)
 #endif
 }
 
+#ifndef OPENSSL_NO_ENGINE
+/*
+ * Implement a hash map from SSL_CTX to private key
+ * as HSM keys need to be process local
+ */
+static map_void_t private_key_map;
 
+/**
+ * @brief Return a private key from the lookup table
+ * @param p SSL_CTX*
+ * @return EVP_PKEY on success, NULL on error
+ */
+EVP_PKEY* tls_lookup_private_key(SSL_CTX* ctx)
+{
+	void *pkey;
+	char ctx_str[64];
+	snprintf(ctx_str, 64, "SSL_CTX-%p", ctx);
+	pkey =  map_get(&private_key_map, ctx_str);
+	LM_DBG("Private key lookup for %s: %p\n", ctx_str, pkey);
+	if (pkey)
+		return *(EVP_PKEY**)pkey;
+	else
+		return NULL;
+}
+
+
+
+/**
+ * @brief Load a private key from an OpenSSL engine
+ * @param d TLS domain
+ * @return 0 on success, -1 on error
+ *
+ * Do this in mod_child() as PKCS#11 libraries are not guaranteed
+ * to be fork() safe
+ *
+ * private_key setting which starts with /engine: is assumed to be
+ * an HSM key and not a file-based key
+ *
+ * We store the private key in a local memory hash table as
+ * HSM keys must be process-local. We use the SSL_CTX* address
+ * as the key. We cannot put the key into d->ctx[i] as that is
+ * in shared memory.
+ */
+static int load_engine_private_key(tls_domain_t* d)
+{
+	int idx, ret_pwd, i;
+	EVP_PKEY *pkey;
+	int procs_no;
+	char ctx_str[64];
+
+	if (!d->pkey_file.s || !d->pkey_file.len) {
+		DBG("%s: No private key specified\n", tls_domain_str(d));
+		return 0;
+	}
+	if (strncmp(d->pkey_file.s, "/engine:", 8) != 0)
+		return 0;
+	procs_no = get_max_procs();
+	for (i = 0; i<procs_no; i++) {
+		snprintf(ctx_str, 64, "SSL_CTX-%p", d->ctx[i]);
+		for(idx = 0, ret_pwd = 0; idx < 3; idx++) {
+			if (i) {
+				map_set(&private_key_map, ctx_str, pkey);
+				ret_pwd = 1;
+			} else {
+				pkey = tls_engine_private_key(d->pkey_file.s+8);
+				if (pkey) {
+					map_set(&private_key_map, ctx_str, pkey);
+					// store the key for i = 0 to perform certificate sanity check
+					ret_pwd = SSL_CTX_use_PrivateKey(d->ctx[i], pkey);
+				} else {
+					ret_pwd = 0;
+				}
+			}
+			if (ret_pwd) {
+				break;
+			} else {
+				ERR("%s: Unable to load private key '%s'\n",
+				    tls_domain_str(d), d->pkey_file.s);
+				TLS_ERR("load_private_key:");
+				continue;
+			}
+		}
+
+		if (!ret_pwd) {
+			ERR("%s: Unable to load engine key label '%s'\n",
+			    tls_domain_str(d), d->pkey_file.s);
+			TLS_ERR("load_private_key:");
+			return -1;
+		}
+		if (i == 0 && !SSL_CTX_check_private_key(d->ctx[i])) {
+			ERR("%s: Key '%s' does not match the public key of the"
+			    " certificate\n", tls_domain_str(d), d->pkey_file.s);
+			TLS_ERR("load_engine_private_key:");
+			return -1;
+		}
+	}
+
+
+	LM_INFO("%s: Key '%s' successfully loaded\n",
+		tls_domain_str(d), d->pkey_file.s);
+	return 0;
+}
+#endif
 /**
  * @brief Load a private key from a file 
  * @param d TLS domain
@@ -1104,8 +1260,19 @@ static int load_private_key(tls_domain_t* d)
 		SSL_CTX_set_default_passwd_cb_userdata(d->ctx[i], d->pkey_file.s);
 		
 		for(idx = 0, ret_pwd = 0; idx < 3; idx++) {
+#ifndef OPENSSL_NO_ENGINE
+			// in PROC_INIT skip loading HSM keys due to
+			// fork() issues with PKCS#11 libaries
+			if (strncmp(d->pkey_file.s, "/engine:", 8) != 0) {
+				ret_pwd = SSL_CTX_use_PrivateKey_file(d->ctx[i], d->pkey_file.s,
+					SSL_FILETYPE_PEM);
+			} else {
+				ret_pwd = 1;
+			}
+#else
 			ret_pwd = SSL_CTX_use_PrivateKey_file(d->ctx[i], d->pkey_file.s,
 					SSL_FILETYPE_PEM);
+#endif
 			if (ret_pwd) {
 				break;
 			} else {
@@ -1122,7 +1289,12 @@ static int load_private_key(tls_domain_t* d)
 			TLS_ERR("load_private_key:");
 			return -1;
 		}
-		
+#ifndef OPENSSL_NO_ENGINE
+		if (strncmp(d->pkey_file.s, "/engine:", 8) == 0) {
+			// skip private key validity check for HSM keys
+			continue;
+		}
+#endif
 		if (!SSL_CTX_check_private_key(d->ctx[i])) {
 			ERR("%s: Key '%s' does not match the public key of the"
 					" certificate\n", tls_domain_str(d), d->pkey_file.s);
@@ -1137,6 +1309,36 @@ static int load_private_key(tls_domain_t* d)
 }
 
 
+#ifndef OPENSSL_NO_ENGINE
+/**
+ * @brief Initialize engine private keys
+ *
+ * PKCS#11 libraries are not guaranteed to be fork() safe
+ * so we fix private keys in the child
+ */
+int tls_fix_engine_keys(tls_domains_cfg_t* cfg, tls_domain_t* srv_defaults,
+				tls_domain_t* cli_defaults)
+{
+	tls_domain_t* d;
+	d = cfg->srv_list;
+	while(d) {
+		if (load_engine_private_key(d) < 0) return -1;
+		d = d->next;
+	}
+
+	d = cfg->cli_list;
+	while(d) {
+		if (load_engine_private_key(d) < 0) return -1;
+		d = d->next;
+	}
+
+	if (load_engine_private_key(cfg->srv_default) < 0) return -1;
+	if (load_engine_private_key(cfg->cli_default) < 0) return -1;
+
+	return 0;
+
+}
+#endif
 /**
  * @brief Initialize attributes of all domains from default domains if necessary
  *
@@ -1166,18 +1368,18 @@ int tls_fix_domains_cfg(tls_domains_cfg_t* cfg, tls_domain_t* srv_defaults,
 											0, 0);
 	}
 
-	if (fix_domain(cfg->srv_default, srv_defaults) < 0) return -1;
-	if (fix_domain(cfg->cli_default, cli_defaults) < 0) return -1;
+	if (ksr_tls_fix_domain(cfg->srv_default, srv_defaults) < 0) return -1;
+	if (ksr_tls_fix_domain(cfg->cli_default, cli_defaults) < 0) return -1;
 
 	d = cfg->srv_list;
 	while (d) {
-		if (fix_domain(d, srv_defaults) < 0) return -1;
+		if (ksr_tls_fix_domain(d, srv_defaults) < 0) return -1;
 		d = d->next;
 	}
 
 	d = cfg->cli_list;
 	while (d) {
-		if (fix_domain(d, cli_defaults) < 0) return -1;
+		if (ksr_tls_fix_domain(d, cli_defaults) < 0) return -1;
 		d = d->next;
 	}
 
@@ -1310,6 +1512,7 @@ tls_domain_t* tls_lookup_cfg(tls_domains_cfg_t* cfg, int type,
 		struct ip_addr* ip, unsigned short port, str *sname, str *srvid)
 {
 	tls_domain_t *p;
+	int dotpos;
 
 	if (type & TLS_DOMAIN_DEF) {
 		if (type & TLS_DOMAIN_SRV) return cfg->srv_default;
@@ -1333,55 +1536,100 @@ tls_domain_t* tls_lookup_cfg(tls_domains_cfg_t* cfg, int type,
 
 		}
 		if(sname) {
-			LM_DBG("comparing addr: [%s:%d]  [%s:%d] -- sni: [%.*s] [%.*s]\n",
+			LM_DBG("comparing addr: l[%s:%d]  r[%s:%d] -- sni: l[%.*s] r[%.*s] %d"
+				" -- type: %d\n",
 				ip_addr2a(&p->ip), p->port, ip_addr2a(ip), port,
 				p->server_name.len, ZSW(p->server_name.s),
-				sname->len, ZSW(sname->s));
+				sname->len, ZSW(sname->s), p->server_name_mode, p->type);
 		}
-		if ((p->port==0 || p->port == port) && ip_addr_cmp(&p->ip, ip)) {
-			if(sname && sname->len>0) {
-				if(p->server_name.s && p->server_name.len==sname->len
-					&& strncasecmp(p->server_name.s, sname->s, sname->len)==0) {
-					LM_DBG("socket+server_name based TLS server domain found\n");
-					return p;
+		if ((p->type & TLS_DOMAIN_ANY)
+				|| ((p->port==0 || p->port == port)
+						&& ip_addr_cmp(&p->ip, ip))) {
+			if(sname && sname->s && sname->len>0
+						&& p->server_name.s && p->server_name.len>0) {
+				if (p->server_name_mode!=KSR_TLS_SNM_SUBDOM) {
+					/* match sni domain */
+					if(p->server_name.len==sname->len
+								&& strncasecmp(p->server_name.s, sname->s,
+									sname->len)==0) {
+						LM_DBG("socket+server_name based TLS server domain found\n");
+						return p;
+					}
+				}
+				if ((p->server_name_mode==KSR_TLS_SNM_INCDOM
+							|| p->server_name_mode==KSR_TLS_SNM_SUBDOM)
+						&& (p->server_name.len<sname->len)) {
+					dotpos = sname->len - p->server_name.len;
+					if(sname->s[dotpos] == '.'
+							&& strncasecmp(p->server_name.s,
+									sname->s + dotpos + 1,
+									p->server_name.len)==0) {
+						LM_DBG("socket+server_name based TLS server sub-domain found\n");
+						return p;
+					}
 				}
 			} else {
-				return p;
+				if (!(p->type & TLS_DOMAIN_ANY)) {
+					LM_DBG("socket based TLS server domain found\n");
+					return p;
+				}
 			}
 		}
 		p = p->next;
 	}
 
-	     /* No matching domain found, return default */
+	/* No matching domain found, return default */
 	if (type & TLS_DOMAIN_SRV) return cfg->srv_default;
 	else return cfg->cli_default;
 }
 
 
 /**
- * @brief Check whether configuration domain exists
+ * @brief Check whether configuration domain is duplicated
  * @param cfg configuration set
  * @param d checked domain
- * @return 1 if domain exists, 0 if its not exists
+ * @return 1 if domain is duplicated, 0 if it's not
  */
-static int domain_exists(tls_domains_cfg_t* cfg, tls_domain_t* d)
+int ksr_tls_domain_duplicated(tls_domains_cfg_t* cfg, tls_domain_t* d)
 {
 	tls_domain_t *p;
 
 	if (d->type & TLS_DOMAIN_DEF) {
-		if (d->type & TLS_DOMAIN_SRV) return cfg->srv_default != NULL;
-		else return cfg->cli_default != NULL;
+		if (d->type & TLS_DOMAIN_SRV) {
+			if(cfg->srv_default==d) {
+				return 0;
+			}
+			return cfg->srv_default != NULL;
+		} else {
+			if(cfg->cli_default==d) {
+				return 0;
+			}
+			return cfg->cli_default != NULL;
+		}
 	} else {
 		if (d->type & TLS_DOMAIN_SRV) p = cfg->srv_list;
 		else p = cfg->cli_list;
 	}
 
+	if(d->type & TLS_DOMAIN_ANY) {
+		/* any address, it must have server_name for SNI */
+		if(d->server_name.len==0) {
+			LM_WARN("duplicate definition for a tls profile (same address)"
+					" and no server name provided\n");
+			return 1;
+		} else {
+			return 0;
+		}
+	}
+
 	while (p) {
-		if ((p->port == d->port) && ip_addr_cmp(&p->ip, &d->ip)) {
-			if(p->server_name.len==0) {
-				LM_WARN("another tls domain with same address was defined"
-						" and no server name provided\n");
-				return 1;
+		if(p!=d) {
+			if ((p->port == d->port) && ip_addr_cmp(&p->ip, &d->ip)) {
+				if(d->server_name.len==0 || p->server_name.len==0) {
+					LM_WARN("duplicate definition for a tls profile (same address)"
+							" and no server name provided\n");
+					return 1;
+				}
 			}
 		}
 		p = p->next;
@@ -1403,9 +1651,6 @@ int tls_add_domain(tls_domains_cfg_t* cfg, tls_domain_t* d)
 		ERR("TLS configuration structure missing\n");
 		return -1;
 	}
-
-	     /* Make sure the domain does not exist */
-	if (domain_exists(cfg, d)) return 1;
 
 	if (d->type & TLS_DOMAIN_DEF) {
 		if (d->type & TLS_DOMAIN_CLI) {

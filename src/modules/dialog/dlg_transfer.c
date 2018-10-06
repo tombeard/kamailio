@@ -68,11 +68,11 @@ int dlg_bridge_init_hdrs(void)
 		LM_ERR("no more pkg memory\n");
 		return -1;
 	}
-	strncpy(dlg_bridge_hdrs_buf,
+	memcpy(dlg_bridge_hdrs_buf,
 			"Contact: <", 10);
-	strncpy(dlg_bridge_hdrs_buf + 10,
+	memcpy(dlg_bridge_hdrs_buf + 10,
 			dlg_bridge_contact.s, dlg_bridge_contact.len);
-	strncpy(dlg_bridge_hdrs_buf + 10 + dlg_bridge_contact.len,
+	memcpy(dlg_bridge_hdrs_buf + 10 + dlg_bridge_contact.len,
 			">\r\nContent-Type: application/sdp\r\n", 34);
 	dlg_bridge_hdrs_buf[dlg_bridge_contact.len+44] = '\0';
 	dlg_bridge_inv_hdrs.s = dlg_bridge_hdrs_buf;
@@ -357,7 +357,7 @@ int dlg_bridge(str *from, str *to, str *op, str *bd)
 
 	LM_DBG("bridge <%.*s> to <%.*s>\n", dtc->from.len, dtc->from.s,
 			dtc->to.len, dtc->to.s);
-	if(bd!=NULL && bd->s!=NULL && bd->len>0) {
+	if(bd!=NULL && bd->s!=NULL) {
 		s_body.s = bd->s;
 		s_body.len = bd->len;
 	} else {

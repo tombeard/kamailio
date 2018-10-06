@@ -71,14 +71,14 @@ static int send_2XX_reply(sip_msg_t *msg, int reply_code,
 	{
 		ERR_MEM(PKG_MEM_STR);
 	}
-	strncpy(hdr_append.s, "Expires: ", 9);
-	strncpy(hdr_append.s+9, tmp.s, tmp.len);
+	memcpy(hdr_append.s, "Expires: ", 9);
+	memcpy(hdr_append.s+9, tmp.s, tmp.len);
 	tmp.s = hdr_append.s+9+tmp.len;
-	strncpy(tmp.s, CRLF, CRLF_LEN);
+	memcpy(tmp.s, CRLF, CRLF_LEN);
 	tmp.s += CRLF_LEN;
-	strncpy(tmp.s, "Contact: <", 10);
+	memcpy(tmp.s, "Contact: <", 10);
 	tmp.s += 10;
-	strncpy(tmp.s, local_contact->s, local_contact->len);
+	memcpy(tmp.s, local_contact->s, local_contact->len);
 	tmp.s[local_contact->len] = '\0';
 	t = strstr(tmp.s, ";transport=");
 	tmp.s += local_contact->len;
@@ -87,22 +87,22 @@ static int send_2XX_reply(sip_msg_t *msg, int reply_code,
 		switch (msg->rcv.proto)
 		{
 			case PROTO_TCP:
-				strncpy(tmp.s, ";transport=tcp", 14);
+				memcpy(tmp.s, ";transport=tcp", 14);
 				tmp.s += 14;
 				hdr_append.len -= 1;
 				break;
 			case PROTO_TLS:
-				strncpy(tmp.s, ";transport=tls", 14);
+				memcpy(tmp.s, ";transport=tls", 14);
 				tmp.s += 14;
 				hdr_append.len -= 1;
 				break;
 			case PROTO_SCTP:
-				strncpy(tmp.s, ";transport=sctp", 15);
+				memcpy(tmp.s, ";transport=sctp", 15);
 				tmp.s += 15;
 				break;
 			case PROTO_WS:
 			case PROTO_WSS:
-				strncpy(tmp.s, ";transport=ws", 13);
+				memcpy(tmp.s, ";transport=ws", 13);
 				tmp.s += 13;
 				hdr_append.len -= 2;
 				break;
@@ -113,7 +113,7 @@ static int send_2XX_reply(sip_msg_t *msg, int reply_code,
 		hdr_append.len -= 15;
 	}
 	*tmp.s = '>';
-	strncpy(tmp.s+1, CRLF, CRLF_LEN);
+	memcpy(tmp.s+1, CRLF, CRLF_LEN);
 
 	hdr_append.s[hdr_append.len]= '\0';
 
@@ -191,6 +191,7 @@ int insert_subs_db(subs_t* s, int type)
 		contact_col, local_contact_col, version_col,socket_info_col,reason_col,
 		watcher_user_col, watcher_domain_col, updated_col, updated_winfo_col,
 		user_agent_col, flags_col;
+	str sval_empty = str_init("");
 
 	if(pa_dbf.use_table(pa_db, &active_watchers_table)< 0)
 	{
@@ -353,7 +354,8 @@ int insert_subs_db(subs_t* s, int type)
 	query_vals[updated_col].val.int_val = s->updated;
 	query_vals[updated_winfo_col].val.int_val = s->updated_winfo;
 	query_vals[flags_col].val.int_val = s->flags;
-	query_vals[user_agent_col].val.str_val= s->user_agent;
+	query_vals[user_agent_col].val.str_val=
+		(s->user_agent.s && s->user_agent.len>0)?s->user_agent:sval_empty;
 
 	if (pa_dbf.use_table(pa_db, &active_watchers_table) < 0)
 	{
@@ -372,8 +374,8 @@ int insert_subs_db(subs_t* s, int type)
 
 int update_subs_db(subs_t* subs, int type)
 {
-	db_key_t query_cols[3], update_keys[8];
-	db_val_t query_vals[3], update_vals[8];
+	db_key_t query_cols[3], update_keys[10];
+	db_val_t query_vals[3], update_vals[10];
 	int n_update_cols= 0;
 	int n_query_cols = 0;
 
@@ -420,6 +422,19 @@ int update_subs_db(subs_t* subs, int type)
 		update_vals[n_update_cols].nul = 0;
 		update_vals[n_update_cols].val.int_val = subs->updated_winfo;
 		n_update_cols++;
+
+		update_keys[n_update_cols] = &str_contact_col;
+		update_vals[n_update_cols].type = DB1_STR;
+		update_vals[n_update_cols].nul = 0;
+		update_vals[n_update_cols].val.str_val = subs->contact;
+		n_update_cols++;
+
+		update_keys[n_update_cols] = &str_record_route_col;
+		update_vals[n_update_cols].type = DB1_STR;
+		update_vals[n_update_cols].nul = 0;
+		update_vals[n_update_cols].val.str_val = subs->record_route;
+		n_update_cols++;
+
 	}
 	if(type & LOCAL_TYPE)
 	{
@@ -1003,7 +1018,7 @@ int handle_subscribe0(struct sip_msg* msg)
 {
 	struct to_body *pfrom;
 
-	if (parse_from_uri(msg) < 0)
+	if (parse_from_uri(msg) == NULL)
 	{
 		LM_ERR("failed to find From header\n");
 		if (slb.freply(msg, 400, &pu_400_rpl) < 0)
@@ -1019,24 +1034,39 @@ int handle_subscribe0(struct sip_msg* msg)
 			pfrom->parsed_uri.host);
 }
 
-int w_handle_subscribe(struct sip_msg* msg, char* watcher_uri)
+int w_handle_subscribe0(struct sip_msg* msg, char* p1, char *p2)
 {
-	str wuri;
+	return handle_subscribe0(msg);
+}
+
+int handle_subscribe_uri(struct sip_msg* msg, str* wuri)
+{
 	struct sip_uri parsed_wuri;
 
-	if (fixup_get_svalue(msg, (gparam_p)watcher_uri, &wuri) != 0)
-	{
-		LM_ERR("invalid uri parameter\n");
-		return -1;
-	}
-
-	if (parse_uri(wuri.s, wuri.len, &parsed_wuri) < 0)
+	if (parse_uri(wuri->s, wuri->len, &parsed_wuri) < 0)
 	{
 		LM_ERR("failed to parse watcher URI\n");
 		return -1;
 	}
 
 	return handle_subscribe(msg, parsed_wuri.user, parsed_wuri.host);
+}
+
+int w_handle_subscribe(struct sip_msg* msg, char* watcher_uri, char* p2)
+{
+	str wuri;
+
+	if (fixup_get_svalue(msg, (gparam_p)watcher_uri, &wuri) != 0)
+	{
+		LM_ERR("invalid uri parameter\n");
+		return -1;
+	}
+	return handle_subscribe_uri(msg, &wuri);
+}
+
+int w_handle_subscribe1(struct sip_msg* msg, char* watcher_uri)
+{
+	return w_handle_subscribe(msg, watcher_uri, NULL);
 }
 
 int handle_subscribe(struct sip_msg* msg, str watcher_user, str watcher_domain)
@@ -1153,6 +1183,7 @@ int handle_subscribe(struct sip_msg* msg, str watcher_user, str watcher_domain)
 			LM_INFO("getting stored info\n");
 			goto error;
 		}
+		found = 1;
 		reason= subs.reason;
 	}
 
@@ -1995,14 +2026,14 @@ void update_db_subs_timer_dbonly(void)
 	db_val_t qvals[1];
 	db_key_t result_cols[18];
 	int pres_uri_col, to_user_col, to_domain_col, from_user_col, from_domain_col,
-		callid_col, totag_col, fromtag_col, event_col, event_id_col,
-		local_cseq_col, expires_col, rr_col, sockinfo_col,
-		contact_col, lcontact_col, watcher_user_col, watcher_domain_col;
+	callid_col, totag_col, fromtag_col, event_col, event_id_col,
+	local_cseq_col, expires_col, rr_col, sockinfo_col,
+	contact_col, lcontact_col, watcher_user_col, watcher_domain_col;
 	int n_result_cols = 0;
 	db1_res_t *result= NULL;
-	db_row_t *row = NULL;
+	db_row_t *rows;
 	db_val_t *row_vals= NULL;
-	int i;
+	int i, res;
 	subs_t s, *s_new, *s_array = NULL, *s_del;
 	str ev_name;
 	pres_ev_t* event;
@@ -2041,27 +2072,26 @@ void update_db_subs_timer_dbonly(void)
 		return;
 	}
 
-	if (pa_dbf.query(pa_db, qcols, qops, qvals, result_cols,
-				1, n_result_cols, 0, &result) < 0) {
-		LM_ERR("failed to query database for expired subscriptions\n");
-		if(result)
-			pa_dbf.free_result(pa_db, result);
-		return;
-	}
-
-	if(result== NULL)
-		return;
-
-	if(result->n <=0 ) {
-		pa_dbf.free_result(pa_db, result);
-		return;
-	}
-	LM_DBG("found %d dialogs\n", result->n);
-
-	for(i=0; i<result->n; i++)
+	res = db_fetch_query(&pa_dbf, pres_fetch_rows, pa_db, qcols, qops, qvals, result_cols,1, n_result_cols, 0, &result );
+	if (res < 0)
 	{
-		row = &result->rows[i];
-		row_vals = ROW_VALUES(row);
+		LM_ERR("failed to query database for expired subscriptions\n");
+		if (result) {
+			pa_dbf.free_result(pa_db, result);
+		}
+		return;
+	}
+
+	if(result == NULL) {
+		LM_DBG("no results returned\n");
+		return;
+	}
+
+	LM_DBG("processing %d dialogs\n", RES_ROW_N(result));
+	s_array = NULL;
+	rows = RES_ROWS(result);
+	for (i = 0; i < RES_ROW_N(result); i++) {
+		row_vals = ROW_VALUES(&rows[i]);
 
 		memset(&s, 0, sizeof(subs_t));
 
@@ -2142,12 +2172,6 @@ void update_db_subs_timer_dbonly(void)
 		s_new = s_new->next;
 		pkg_free(s_del);
 	}
-
-	/* delete the expired subscriptions */
-	if(pa_dbf.delete(pa_db, qcols, qops, qvals, 1) < 0)
-	{
-		LM_ERR("deleting expired information from database\n");
-	}
 }
 
 void update_db_subs_timer_dbnone(int no_lock)
@@ -2193,20 +2217,20 @@ void update_db_subs_timer_dbnone(int no_lock)
 
 
 
-void update_db_subs_timer(db1_con_t *db,db_func_t dbf, shtable_t hash_table,
+void update_db_subs_timer(db1_con_t *db,db_func_t *dbf, shtable_t hash_table,
 		int htable_size, int no_lock, handle_expired_func_t handle_expired_func)
 {
-	db_key_t query_cols[24], update_cols[6];
-	db_val_t query_vals[24], update_vals[6];
+	db_key_t query_cols[25], update_cols[8];
+	db_val_t query_vals[25], update_vals[8];
 	db_op_t update_ops[1];
 	subs_t* del_s;
 	int pres_uri_col, to_user_col, to_domain_col, from_user_col, from_domain_col,
 		callid_col, totag_col, fromtag_col, event_col,status_col, event_id_col,
 		local_cseq_col, remote_cseq_col, expires_col, record_route_col,
 		contact_col, local_contact_col, version_col,socket_info_col,reason_col,
-		watcher_user_col, watcher_domain_col, updated_col, updated_winfo_col;
+		watcher_user_col, watcher_domain_col, updated_col, updated_winfo_col, user_agent_col;
 	int u_expires_col, u_local_cseq_col, u_remote_cseq_col, u_version_col,
-		u_reason_col, u_status_col;
+		u_reason_col, u_status_col, u_contact_col, u_record_route_col;
 	int i;
 	subs_t* s= NULL, *prev_s= NULL;
 	int n_query_cols= 0, n_update_cols= 0;
@@ -2337,6 +2361,11 @@ void update_db_subs_timer(db1_con_t *db,db_func_t dbf, shtable_t hash_table,
 	query_vals[updated_winfo_col].nul = 0;
 	n_query_cols++;
 
+	query_cols[user_agent_col= n_query_cols]=&str_user_agent_col;
+	query_vals[user_agent_col].type = DB1_STR;
+	query_vals[user_agent_col].nul = 0;
+	n_query_cols++;
+
 	/* cols and values used for update */
 	update_cols[u_expires_col= n_update_cols]= &str_expires_col;
 	update_vals[u_expires_col].type = DB1_INT;
@@ -2368,6 +2397,16 @@ void update_db_subs_timer(db1_con_t *db,db_func_t dbf, shtable_t hash_table,
 	update_vals[u_version_col].nul = 0;
 	n_update_cols++;
 
+	update_cols[u_contact_col= n_update_cols]= &str_contact_col;
+	update_vals[u_contact_col].type = DB1_STR;
+	update_vals[u_contact_col].nul = 0;
+	n_update_cols++;
+
+	update_cols[u_record_route_col= n_update_cols]= &str_record_route_col;
+	update_vals[u_record_route_col].type = DB1_STR;
+	update_vals[u_record_route_col].nul = 0;
+	n_update_cols++;
+
 	for(i=0; i<htable_size; i++)
 	{
 		if(!no_lock)
@@ -2394,6 +2433,8 @@ void update_db_subs_timer(db1_con_t *db,db_func_t dbf, shtable_t hash_table,
 				/* need for a struct free/destroy? */
 				if (del_s->contact.s)
 					shm_free(del_s->contact.s);
+				if (del_s->record_route.s)
+					shm_free(del_s->record_route.s);
 				shm_free(del_s);
 				continue;
 			}
@@ -2419,8 +2460,10 @@ void update_db_subs_timer(db1_con_t *db,db_func_t dbf, shtable_t hash_table,
 					update_vals[u_version_col].val.int_val= s->version;
 					update_vals[u_status_col].val.int_val= s->status;
 					update_vals[u_reason_col].val.str_val= s->reason;
+					update_vals[u_contact_col].val.str_val = s->contact;
+					update_vals[u_record_route_col].val.str_val = s->record_route;
 
-					if(dbf.update(db, query_cols, 0, query_vals, update_cols,
+					if(dbf->update(db, query_cols, 0, query_vals, update_cols,
 								update_vals, n_query_update, n_update_cols)< 0)
 					{
 						LM_ERR("updating in database\n");
@@ -2456,8 +2499,10 @@ void update_db_subs_timer(db1_con_t *db,db_func_t dbf, shtable_t hash_table,
 					query_vals[socket_info_col].val.str_val= s->sockinfo_str;
 					query_vals[updated_col].val.int_val = -1;
 					query_vals[updated_winfo_col].val.int_val = -1;
+					query_vals[user_agent_col].val.str_val = s->user_agent;
 
-					if(dbf.insert(db,query_cols,query_vals,n_query_cols )<0)
+
+					if(dbf->insert(db,query_cols,query_vals,n_query_cols )<0)
 					{
 						LM_ERR("unsuccessful sql insert\n");
 					} else {
@@ -2474,7 +2519,7 @@ void update_db_subs_timer(db1_con_t *db,db_func_t dbf, shtable_t hash_table,
 
 	update_vals[0].val.int_val= (int)time(NULL) - expires_offset;
 	update_ops[0]= OP_LT;
-	if(dbf.delete(db, update_cols, update_ops, update_vals, 1) < 0)
+	if(dbf->delete(db, update_cols, update_ops, update_vals, 1) < 0)
 	{
 		LM_ERR("deleting expired information from database\n");
 	}
@@ -2511,7 +2556,7 @@ void timer_db_update(unsigned int ticks,void *param)
 				LM_ERR("sql use table failed\n");
 				return;
 			}
-			update_db_subs_timer(pa_db, pa_dbf, subs_htable, shtable_size,
+			update_db_subs_timer(pa_db, &pa_dbf, subs_htable, shtable_size,
 					no_lock, handle_expired_subs);
 	}
 }

@@ -112,37 +112,41 @@ inline static unsigned long big_hash_idx(unsigned long s)
 #define END_CHECK_PATTERN2 0xabcdefed
 
 
-static  void qm_debug_frag(struct qm_block* qm, struct qm_frag* f,
-		const char* file, unsigned int line)
+#define qm_debug_frag(qm, f, file, line)	\
+			qm_debug_check_frag((qm), (f), (file), (line), __FILE__, __LINE__)
+static  void qm_debug_check_frag(struct qm_block* qm, struct qm_frag* f,
+		const char* file, unsigned int line,
+		const char* efile, unsigned int eline)
 {
 	if (f->check!=ST_CHECK_PATTERN){
-		LOG(L_CRIT, "BUG: qm_*: fragm. %p (address %p) "
+		LM_CRIT("BUG: qm: fragm. %p (address %p) "
 				"beginning overwritten (%lx)! Memory allocator was called "
-				"from %s:%u. Fragment marked by %s:%lu.\n",
+				"from %s:%u. Fragment marked by %s:%lu. Exec from %s:%u.\n",
 				f, (char*)f+sizeof(struct qm_frag),
-				f->check, file, line, f->file, f->line);
+				f->check, file, line, f->file, f->line, efile, eline);
 		qm_status(qm);
 		abort();
 	};
 	if ((FRAG_END(f)->check1!=END_CHECK_PATTERN1)||
-		(FRAG_END(f)->check2!=END_CHECK_PATTERN2)){
-		LOG(L_CRIT, "BUG: qm_*: fragm. %p (address %p) "
+			(FRAG_END(f)->check2!=END_CHECK_PATTERN2)){
+		LM_CRIT("BUG: qm: fragm. %p (address %p) "
 				"end overwritten (%lx, %lx)! Memory allocator was called "
-				"from %s:%u. Fragment marked by %s:%lu.\n",
+				"from %s:%u. Fragment marked by %s:%lu. Exec from %s:%u.\n",
 				f, (char*)f+sizeof(struct qm_frag),
 				FRAG_END(f)->check1, FRAG_END(f)->check2,
-				file, line, f->file, f->line);
+				file, line, f->file, f->line, efile, eline);
 		qm_status(qm);
 		abort();
 	}
 	if ((f>qm->first_frag)&&
 			((PREV_FRAG_END(f)->check1!=END_CHECK_PATTERN1) ||
 				(PREV_FRAG_END(f)->check2!=END_CHECK_PATTERN2) ) ){
-		LOG(L_CRIT, "BUG: qm_*: prev. fragm. tail overwritten(%lx, %lx)[%p:%p]! "
+		LM_CRIT("BUG: qm: prev. fragm. tail overwritten(%lx, %lx)[%p:%p]! "
 				"Memory allocator was called from %s:%u. Fragment marked by "
-				"%s:%lu.\n",
+				"%s:%lu. Exec from %s:%u.\n",
 				PREV_FRAG_END(f)->check1, PREV_FRAG_END(f)->check2, f,
-				(char*)f+sizeof(struct qm_frag), file, line, f->file, f->line);
+				(char*)f+sizeof(struct qm_frag), file, line, f->file, f->line,
+				efile, eline);
 		qm_status(qm);
 		abort();
 	}
@@ -185,11 +189,11 @@ struct qm_block* qm_malloc_init(char* address, unsigned long size, int type)
 
 	/* make address and size multiple of 8*/
 	start=(char*)ROUNDUP((unsigned long) address);
-	DBG("qm_malloc_init: QM_OPTIMIZE=%lu, /ROUNDTO=%lu\n",
+	LM_DBG("QM_OPTIMIZE=%lu, /ROUNDTO=%lu\n",
 			QM_MALLOC_OPTIMIZE, QM_MALLOC_OPTIMIZE/ROUNDTO);
-	DBG("qm_malloc_init: QM_HASH_SIZE=%lu, qm_block size=%lu\n",
+	LM_DBG("QM_HASH_SIZE=%lu, qm_block size=%lu\n",
 			QM_HASH_SIZE, (unsigned long)sizeof(struct qm_block));
-	DBG("qm_malloc_init(%p, %lu), start=%p\n", address,
+	LM_DBG("qm_malloc_init(%p, %lu), start=%p\n", address,
 			(unsigned long)size, start);
 	if (size<start-address) return 0;
 	size-=(start-address);
@@ -198,13 +202,13 @@ struct qm_block* qm_malloc_init(char* address, unsigned long size, int type)
 
 	init_overhead=ROUNDUP(sizeof(struct qm_block))+sizeof(struct qm_frag)+
 		sizeof(struct qm_frag_end);
-	DBG("qm_malloc_init: size= %lu, init_overhead=%lu\n",
+	LM_DBG("size= %lu, init_overhead=%lu\n",
 			(unsigned long)size, init_overhead);
 
 	if (size < init_overhead)
 	{
 		/* not enough mem to create our control structures !!!*/
-		LOG(L_ERR, "qm_malloc_init(%lu); No memory left to create control structures!\n",
+		LM_ERR("qm_malloc_init(%lu); No memory left to create control structures\n",
 				(unsigned long)size);
 		return 0;
 	}
@@ -249,7 +253,6 @@ struct qm_block* qm_malloc_init(char* address, unsigned long size, int type)
 }
 
 
-
 static inline void qm_detach_free(struct qm_block* qm, struct qm_frag* frag)
 {
 	struct qm_frag *prev;
@@ -262,16 +265,12 @@ static inline void qm_detach_free(struct qm_block* qm, struct qm_frag* frag)
 }
 
 
-
 #ifdef DBG_QM_MALLOC
 static inline struct qm_frag* qm_find_free(struct qm_block* qm,
-											size_t size,
-											int *h,
-											unsigned int *count)
+				size_t size, int *h, unsigned int *count)
 #else
 static inline struct qm_frag* qm_find_free(struct qm_block* qm,
-											size_t size,
-											int* h)
+				size_t size, int* h)
 #endif
 {
 	int hash;
@@ -288,7 +287,7 @@ static inline struct qm_frag* qm_find_free(struct qm_block* qm,
 	/*try in a bigger bucket*/
 	}
 	/* not found */
-	LOG(L_ERR, "qm_find_free(%p, %lu); Free fragment not found!\n",
+	LM_ERR("qm_find_free(%p, %lu); Free fragment not found!\n",
 			qm, (unsigned long)size);
 	return 0;
 }
@@ -347,8 +346,8 @@ int split_frag(struct qm_block* qm, struct qm_frag* f, size_t new_size)
 
 #ifdef DBG_QM_MALLOC
 void* qm_malloc(void* qmp, size_t size,
-					const char* file, const char* func, unsigned int line,
-					const char *mname)
+			const char* file, const char* func, unsigned int line,
+			const char *mname)
 #else
 void* qm_malloc(void* qmp, size_t size)
 #endif
@@ -421,10 +420,11 @@ void* qm_malloc(void* qmp, size_t size)
 	}
 
 #ifdef DBG_QM_MALLOC
-	LOG(L_ERR, "qm_malloc(%p, %lu) called from %s: %s(%d), module: %s; Free fragment not found!\n",
+	LM_ERR("qm_malloc(%p, %lu) called from %s: %s(%d), module: %s;"
+			" Free fragment not found!\n",
 			qm, (unsigned long)size, file, func, line, mname);
 #else
-	LOG(L_ERR, "qm_malloc(%p, %lu); Free fragment not found!\n",
+	LM_ERR("qm_malloc(%p, %lu); Free fragment not found!\n",
 			qm, (unsigned long)size);
 #endif
 
@@ -432,10 +432,31 @@ void* qm_malloc(void* qmp, size_t size)
 }
 
 
+#ifdef DBG_QM_MALLOC
+void* qm_mallocxz(void* qmp, size_t size,
+			const char* file, const char* func, unsigned int line,
+			const char *mname)
+#else
+void* qm_mallocxz(void* qmp, size_t size)
+#endif
+{
+	void *p;
+
+#ifdef DBG_QM_MALLOC
+	p = qm_malloc(qmp, size, file, func, line, mname);
+#else
+	p = qm_malloc(qmp, size);
+#endif
+
+	if(p) memset(p, 0, size);
+
+	return p;
+}
+
 
 #ifdef DBG_QM_MALLOC
 void qm_free(void* qmp, void* p, const char* file, const char* func,
-				unsigned int line, const char *mname)
+			unsigned int line, const char *mname)
 #else
 void qm_free(void* qmp, void* p)
 #endif
@@ -456,20 +477,24 @@ void qm_free(void* qmp, void* p)
 
 	if (p==0) {
 #ifdef DBG_QM_MALLOC
-		LOG(L_WARN, "WARNING:qm_free: free(0) called from %s: %s(%d)\n", file, func, line);
+		LM_WARN("WARNING: free(0) called from %s: %s(%d)\n", file, func, line);
 #else
-		LOG(L_WARN, "WARNING:qm_free: free(0) called\n");
+		LM_WARN("WARNING: free(0) called\n");
 #endif
 		return;
 	}
 
 #ifdef DBG_QM_MALLOC
 	if (p>(void*)qm->last_frag_end || p<(void*)qm->first_frag){
-		LOG(L_CRIT, "BUG: qm_free: bad pointer %p (out of memory block!)"
+		if(likely(cfg_get(core, core_cfg, mem_safety)==0))  {
+			LM_CRIT("BUG: bad pointer %p (out of memory block!)"
 				" called from %s: %s(%d) - aborting\n", p, file, func, line);
-		if(likely(cfg_get(core, core_cfg, mem_safety)==0))
 			abort();
-		else return;
+		} else {
+			LM_CRIT("BUG: bad pointer %p (out of memory block!)"
+				" called from %s: %s(%d) - ignoring\n", p, file, func, line);
+			return;
+		}
 	}
 #endif
 
@@ -478,14 +503,19 @@ void qm_free(void* qmp, void* p)
 #ifdef DBG_QM_MALLOC
 	qm_debug_frag(qm, f, file, line);
 	if (f->u.is_free){
-		LOG(L_CRIT, "BUG: qm_free: freeing already freed pointer (%p),"
+		if(likely(cfg_get(core, core_cfg, mem_safety)==0)) {
+			LM_CRIT("BUG: freeing already freed pointer (%p),"
 				" called from %s: %s(%d), first free %s: %s(%ld) - aborting\n",
 				p, file, func, line, f->file, f->func, f->line);
-		if(likely(cfg_get(core, core_cfg, mem_safety)==0))
 			abort();
-		else return;
+		} else {
+			LM_CRIT("BUG: freeing already freed pointer (%p),"
+				" called from %s: %s(%d), first free %s: %s(%ld) - ignoring\n",
+				p, file, func, line, f->file, f->func, f->line);
+			return;
+		}
 	}
-	MDBG("qm_free: freeing frag. %p alloc'ed from %s: %s(%ld)\n",
+	MDBG("freeing frag. %p alloc'ed from %s: %s(%ld)\n",
 			f, f->file, f->func, f->line);
 #endif
 	if (unlikely(f->u.is_free)){
@@ -577,20 +607,21 @@ void* qm_realloc(void* qmp, void* p, size_t size)
 	MDBG("qm_realloc(%p, %p, %lu) called from %s: %s(%d)\n",
 			qm, p, (unsigned long)size,
 			file, func, line);
-	if ((p)&&(p>(void*)qm->last_frag_end || p<(void*)qm->first_frag)){
-		LOG(L_CRIT, "BUG: qm_free: bad pointer %p (out of memory block!) - "
+	if ((p)&&(p>(void*)qm->last_frag_end || p<(void*)qm->first_frag)) {
+		LM_CRIT("BUG: bad pointer %p (out of memory block!) - "
 				"aborting\n", p);
 		abort();
 	}
 #endif
 
 	if (size==0) {
-		if (p)
+		if (p) {
 #ifdef DBG_QM_MALLOC
 			qm_free(qm, p, file, func, line, mname);
 #else
 			qm_free(qm, p);
 #endif
+		}
 		return 0;
 	}
 	if (p==0)
@@ -602,10 +633,10 @@ void* qm_realloc(void* qmp, void* p, size_t size)
 	f=(struct qm_frag*) ((char*)p-sizeof(struct qm_frag));
 #ifdef DBG_QM_MALLOC
 	qm_debug_frag(qm, f, file, line);
-	MDBG("qm_realloc: realloc'ing frag %p alloc'ed from %s: %s(%ld)\n",
+	MDBG("realloc'ing frag %p alloc'ed from %s: %s(%ld)\n",
 			f, f->file, f->func, f->line);
 	if (f->u.is_free){
-		LOG(L_CRIT, "BUG:qm_realloc: trying to realloc an already freed "
+		LM_CRIT("BUG: trying to realloc an already freed "
 				"pointer %p , fragment %p -- aborting\n", p, f);
 		abort();
 	}
@@ -616,10 +647,10 @@ void* qm_realloc(void* qmp, void* p, size_t size)
 		orig_size=f->size;
 		/* shrink */
 #ifdef DBG_QM_MALLOC
-		MDBG("qm_realloc: shrinking from %lu to %lu\n",
+		MDBG("shrinking from %lu to %lu\n",
 				f->size, (unsigned long)size);
 		if(split_frag(qm, f, size, file, "fragm. from qm_realloc", line, mname)!=0){
-		MDBG("qm_realloc : shrinked successful\n");
+		MDBG("shrinked successful\n");
 #else
 		if(split_frag(qm, f, size)!=0){
 #endif
@@ -634,7 +665,7 @@ void* qm_realloc(void* qmp, void* p, size_t size)
 	}else if (f->size < size){
 		/* grow */
 #ifdef DBG_QM_MALLOC
-		MDBG("qm_realloc: growing from %lu to %lu\n",
+		MDBG("growing from %lu to %lu\n",
 				f->size, (unsigned long)size);
 #endif
 			orig_size=f->size;
@@ -669,33 +700,35 @@ void* qm_realloc(void* qmp, void* p, size_t size)
 				ptr=qm_malloc(qm, size);
 	#endif
 				if (ptr){
-					/* copy, need by libssl */
+					/* copy old content */
 					memcpy(ptr, p, orig_size);
+					/* free old pointer */
+		#ifdef DBG_QM_MALLOC
+					qm_free(qm, p, file, func, line, mname);
+		#else
+					qm_free(qm, p);
+		#endif
 				} else {
 #ifdef DBG_QM_MALLOC
-					LOG(L_ERR, "qm_realloc(%p, %lu) called from %s: %s(%d), module: %s; qm_malloc() failed!\n",
+					LM_ERR("qm_realloc(%p, %lu) called from %s: %s(%d),"
+							" module: %s; qm_malloc() failed!\n",
 							qm, (unsigned long)size, file, func, line, mname);
 #else
-					LOG(L_ERR, "qm_realloc(%p, %lu); qm_malloc() failed!\n",
+					LM_ERR("qm_realloc(%p, %lu); qm_malloc() failed!\n",
 							qm, (unsigned long)size);
 #endif
 				}
-	#ifdef DBG_QM_MALLOC
-				qm_free(qm, p, file, func, line, mname);
-	#else
-				qm_free(qm, p);
-	#endif
 				p=ptr;
 			}
 	}else{
 		/* do nothing */
 #ifdef DBG_QM_MALLOC
-		MDBG("qm_realloc: doing nothing, same size: %lu - %lu\n",
+		MDBG("doing nothing, same size: %lu - %lu\n",
 				f->size, (unsigned long)size);
 #endif
 	}
 #ifdef DBG_QM_MALLOC
-	MDBG("qm_realloc: returning %p\n", p);
+	MDBG("returning pointer address: %p\n", p);
 #endif
 #ifdef MALLOC_STATS
 	if(qm->type==MEM_TYPE_PKG) {
@@ -706,6 +739,35 @@ void* qm_realloc(void* qmp, void* p, size_t size)
 }
 
 
+#ifdef DBG_QM_MALLOC
+void* qm_reallocxf(void* qmp, void* p, size_t size,
+					const char* file, const char* func, unsigned int line,
+					const char *mname)
+#else
+void* qm_reallocxf(void* qmp, void* p, size_t size)
+#endif
+{
+	void *r;
+
+#ifdef DBG_QM_MALLOC
+	r = qm_realloc(qmp, p, size, file, func, line, mname);
+#else
+	r = qm_realloc(qmp, p, size);
+#endif
+
+	if(!r && p) {
+	#ifdef DBG_QM_MALLOC
+		qm_free(qmp, p, file, func, line, mname);
+	#else
+		qm_free(qmp, p);
+	#endif
+
+	}
+
+	return r;
+}
+
+
 void qm_check(struct qm_block* qm)
 {
 	struct qm_frag* f;
@@ -713,14 +775,14 @@ void qm_check(struct qm_block* qm)
 	int memlog;
 
 	memlog=cfg_get(core, core_cfg, memlog);
-	LOG(memlog, "DEBUG: qm_check()\n");
+	LOG(memlog, "executing qm_check()\n");
 	f = qm->first_frag;
 	while ((char*)f < (char*)qm->last_frag_end) {
 		fcount++;
 		/* check struct qm_frag */
 #ifdef DBG_QM_MALLOC
 		if (f->check!=ST_CHECK_PATTERN){
-			LOG(L_CRIT, "BUG: qm_*: fragm. %p (address %p) "
+			LM_CRIT("BUG: qm: fragm. %p (address %p) "
 					"beginning overwritten(%lx)!\n",
 					f, (char*)f + sizeof(struct qm_frag),
 					f->check);
@@ -728,18 +790,22 @@ void qm_check(struct qm_block* qm)
 			abort();
 		};
 #endif
-		if (f + sizeof(struct qm_frag) + f->size + sizeof(struct qm_frag_end) > qm->first_frag + qm->size) {
-			LOG(L_CRIT, "BUG: qm_*: fragm. %p (address %p) "
+		if ((char*)f + sizeof(struct qm_frag) + f->size
+				+ sizeof(struct qm_frag_end) > (char*)qm->first_frag + qm->size) {
+			LM_CRIT("BUG: qm: fragm. %p (address %p) "
 				"bad size: %lu (frag end: %p > end of block: %p)\n",
-				f, (char*)f + sizeof(struct qm_frag) + sizeof(struct qm_frag_end), f->size,
-				f + sizeof(struct qm_frag) + f->size, qm->first_frag + qm->size);
+				f, (char*)f + sizeof(struct qm_frag), f->size,
+				(char*)f + sizeof(struct qm_frag) + f->size
+					+ sizeof(struct qm_frag_end),
+				(char*)qm->first_frag + qm->size);
 			qm_status(qm);
 			abort();
 		}
 		/* check struct qm_frag_end */
 		if (FRAG_END(f)->size != f->size) {
-			LOG(L_CRIT, "BUG: qm_*: fragm. %p (address %p) "
-				"size in qm_frag and qm_frag_end does not match: frag->size=%lu, frag_end->size=%lu)\n",
+			LM_CRIT("BUG: qm: fragm. %p (address %p) "
+					"size in qm_frag and qm_frag_end does not match:"
+					" frag->size=%lu, frag_end->size=%lu)\n",
 				f, (char*)f + sizeof(struct qm_frag),
 				f->size, FRAG_END(f)->size);
 			qm_status(qm);
@@ -748,7 +814,7 @@ void qm_check(struct qm_block* qm)
 #ifdef DBG_QM_MALLOC
 		if ((FRAG_END(f)->check1 != END_CHECK_PATTERN1) ||
 			(FRAG_END(f)->check2 != END_CHECK_PATTERN2)) {
-			LOG(L_CRIT, "BUG: qm_*: fragm. %p (address %p)"
+			LM_CRIT("BUG: qm: fragm. %p (address %p)"
 						" end overwritten(%lx, %lx)!\n",
 					f, (char*)f + sizeof(struct qm_frag),
 					FRAG_END(f)->check1, FRAG_END(f)->check2);
@@ -759,7 +825,7 @@ void qm_check(struct qm_block* qm)
 		f = FRAG_NEXT(f);
 	}
 
-	LOG(memlog, "DEBUG: qm_check: %lu fragments OK\n", fcount);
+	LOG(memlog, "summary of qm_check: %lu fragments OK\n", fcount);
 }
 
 void qm_status(void* qmp)
@@ -1052,7 +1118,7 @@ int qm_malloc_init_pkg_manager(void)
 	if (_qm_pkg_pool)
 		_qm_pkg_block=qm_malloc_init(_qm_pkg_pool, pkg_mem_size, MEM_TYPE_PKG);
 	if (_qm_pkg_block==0){
-		LOG(L_CRIT, "could not initialize qm memory pool\n");
+		LM_CRIT("could not initialize qm memory pool\n");
 		fprintf(stderr, "Too much qm pkg memory demanded: %ld bytes\n",
 						pkg_mem_size);
 		return -1;
@@ -1063,8 +1129,10 @@ int qm_malloc_init_pkg_manager(void)
 	ma.mem_pool = _qm_pkg_pool;
 	ma.mem_block = _qm_pkg_block;
 	ma.xmalloc = qm_malloc;
+	ma.xmallocxz = qm_mallocxz;
 	ma.xfree = qm_free;
 	ma.xrealloc = qm_realloc;
+	ma.xreallocxf = qm_reallocxf;
 	ma.xstatus = qm_status;
 	ma.xinfo = qm_info;
 	ma.xavailable = qm_available;
@@ -1080,103 +1148,200 @@ int qm_malloc_init_pkg_manager(void)
 /* SHM - shared memory API*/
 static void *_qm_shm_pool = 0;
 static struct qm_block *_qm_shm_block = 0;
+static gen_lock_t* _qm_shm_lock = 0;
+
+#define qm_shm_lock()    lock_get(_qm_shm_lock)
+#define qm_shm_unlock()  lock_release(_qm_shm_lock)
+
+/**
+ *
+ */
+void qm_shm_glock(void* qmp)
+{
+	lock_get(_qm_shm_lock);
+}
+
+/**
+ *
+ */
+void qm_shm_gunlock(void* qmp)
+{
+	lock_release(_qm_shm_lock);
+}
+
+/**
+ *
+ */
+void qm_shm_lock_destroy(void)
+{
+	if (_qm_shm_lock){
+		DBG("destroying the shared memory lock\n");
+		lock_destroy(_qm_shm_lock); /* we don't need to dealloc it*/
+	}
+}
+
+/**
+ * init the core lock
+ */
+int qm_shm_lock_init(void)
+{
+	if (_qm_shm_lock) {
+		LM_DBG("shared memory lock initialized\n");
+		return 0;
+	}
+
+#ifdef DBG_QM_MALLOC
+	_qm_shm_lock = qm_malloc(_qm_shm_block, sizeof(gen_lock_t),
+					_SRC_LOC_, _SRC_FUNCTION_, _SRC_LINE_, _SRC_MODULE_);
+#else
+	_qm_shm_lock = qm_malloc(_qm_shm_block, sizeof(gen_lock_t));
+#endif
+
+	if (_qm_shm_lock==0){
+		LOG(L_CRIT, "could not allocate lock\n");
+		return -1;
+	}
+	if (lock_init(_qm_shm_lock)==0){
+		LOG(L_CRIT, "could not initialize lock\n");
+		return -1;
+	}
+	return 0;
+}
 
 /*SHM wrappers to sync the access to memory block*/
 #ifdef DBG_QM_MALLOC
 void* qm_shm_malloc(void* qmp, size_t size,
-					const char* file, const char* func, unsigned int line, const char* mname)
+		const char* file, const char* func, unsigned int line,
+		const char* mname)
 {
 	void *r;
-	shm_lock();
+	qm_shm_lock();
 	r = qm_malloc(qmp, size, file, func, line, mname);
-	shm_unlock();
+	qm_shm_unlock();
+	return r;
+}
+void* qm_shm_mallocxz(void* qmp, size_t size,
+		const char* file, const char* func, unsigned int line,
+		const char* mname)
+{
+	void *r;
+	qm_shm_lock();
+	r = qm_mallocxz(qmp, size, file, func, line, mname);
+	qm_shm_unlock();
 	return r;
 }
 void* qm_shm_realloc(void* qmp, void* p, size_t size,
-					const char* file, const char* func, unsigned int line, const char* mname)
+		const char* file, const char* func, unsigned int line,
+		const char* mname)
 {
 	void *r;
-	shm_lock();
+	qm_shm_lock();
 	r = qm_realloc(qmp, p, size, file, func, line, mname);
-	shm_unlock();
+	qm_shm_unlock();
+	return r;
+}
+void* qm_shm_reallocxf(void* qmp, void* p, size_t size,
+		const char* file, const char* func, unsigned int line,
+		const char* mname)
+{
+	void *r;
+	qm_shm_lock();
+	r = qm_reallocxf(qmp, p, size, file, func, line, mname);
+	qm_shm_unlock();
 	return r;
 }
 void* qm_shm_resize(void* qmp, void* p, size_t size,
-					const char* file, const char* func, unsigned int line, const char* mname)
+		const char* file, const char* func, unsigned int line,
+		const char* mname)
 {
 	void *r;
-	shm_lock();
+	qm_shm_lock();
 	if(p) qm_free(qmp, p, file, func, line, mname);
 	r = qm_malloc(qmp, size, file, func, line, mname);
-	shm_unlock();
+	qm_shm_unlock();
 	return r;
 }
 void qm_shm_free(void* qmp, void* p, const char* file, const char* func,
-				unsigned int line, const char* mname)
+		unsigned int line, const char* mname)
 {
-	shm_lock();
+	qm_shm_lock();
 	qm_free(qmp, p, file, func, line, mname);
-	shm_unlock();
+	qm_shm_unlock();
 }
 #else
 void* qm_shm_malloc(void* qmp, size_t size)
 {
 	void *r;
-	shm_lock();
+	qm_shm_lock();
 	r = qm_malloc(qmp, size);
-	shm_unlock();
+	qm_shm_unlock();
+	return r;
+}
+void* qm_shm_mallocxz(void* qmp, size_t size)
+{
+	void *r;
+	qm_shm_lock();
+	r = qm_mallocxz(qmp, size);
+	qm_shm_unlock();
 	return r;
 }
 void* qm_shm_realloc(void* qmp, void* p, size_t size)
 {
 	void *r;
-	shm_lock();
+	qm_shm_lock();
 	r = qm_realloc(qmp, p, size);
-	shm_unlock();
+	qm_shm_unlock();
+	return r;
+}
+void* qm_shm_reallocxf(void* qmp, void* p, size_t size)
+{
+	void *r;
+	qm_shm_lock();
+	r = qm_reallocxf(qmp, p, size);
+	qm_shm_unlock();
 	return r;
 }
 void* qm_shm_resize(void* qmp, void* p, size_t size)
 {
 	void *r;
-	shm_lock();
+	qm_shm_lock();
 	if(p) qm_free(qmp, p);
 	r = qm_malloc(qmp, size);
-	shm_unlock();
+	qm_shm_unlock();
 	return r;
 }
 void qm_shm_free(void* qmp, void* p)
 {
-	shm_lock();
+	qm_shm_lock();
 	qm_free(qmp, p);
-	shm_unlock();
+	qm_shm_unlock();
 }
 #endif
 void qm_shm_status(void* qmp)
 {
-	shm_lock();
+	qm_shm_lock();
 	qm_status(qmp);
-	shm_unlock();
+	qm_shm_unlock();
 }
 void qm_shm_info(void* qmp, struct mem_info* info)
 {
-	shm_lock();
+	qm_shm_lock();
 	qm_info(qmp, info);
-	shm_unlock();
-
+	qm_shm_unlock();
 }
 unsigned long qm_shm_available(void* qmp)
 {
 	unsigned long r;
-	shm_lock();
+	qm_shm_lock();
 	r = qm_available(qmp);
-	shm_unlock();
+	qm_shm_unlock();
 	return r;
 }
 void qm_shm_sums(void* qmp)
 {
-	shm_lock();
+	qm_shm_lock();
 	qm_sums(qmp);
-	shm_unlock();
+	qm_shm_unlock();
 }
 
 
@@ -1185,6 +1350,7 @@ void qm_shm_sums(void* qmp)
  */
 void qm_malloc_destroy_shm_manager(void)
 {
+	qm_shm_lock_destroy();
 	/*shm pool from core - nothing to do*/
 	_qm_shm_pool = 0;
 	_qm_shm_block = 0;
@@ -1200,7 +1366,7 @@ int qm_malloc_init_shm_manager(void)
 	if (_qm_shm_pool)
 		_qm_shm_block=qm_malloc_init(_qm_shm_pool, shm_mem_size, MEM_TYPE_SHM);
 	if (_qm_shm_block==0){
-		LOG(L_CRIT, "could not initialize qm shm memory pool\n");
+		LM_CRIT("could not initialize qm shm memory pool\n");
 		fprintf(stderr, "Too much qm shm memory demanded: %ld bytes\n",
 						shm_mem_size);
 		return -1;
@@ -1211,10 +1377,12 @@ int qm_malloc_init_shm_manager(void)
 	ma.mem_pool       = _qm_shm_pool;
 	ma.mem_block      = _qm_shm_block;
 	ma.xmalloc        = qm_shm_malloc;
+	ma.xmallocxz      = qm_shm_mallocxz;
 	ma.xmalloc_unsafe = qm_malloc;
 	ma.xfree          = qm_shm_free;
 	ma.xfree_unsafe   = qm_free;
 	ma.xrealloc       = qm_shm_realloc;
+	ma.xreallocxf     = qm_shm_reallocxf;
 	ma.xresize        = qm_shm_resize;
 	ma.xstatus        = qm_shm_status;
 	ma.xinfo          = qm_shm_info;
@@ -1223,12 +1391,14 @@ int qm_malloc_init_shm_manager(void)
 	ma.xdestroy       = qm_malloc_destroy_shm_manager;
 	ma.xmodstats      = qm_mod_get_stats;
 	ma.xfmodstats     = qm_mod_free_stats;
+	ma.xglock         = qm_shm_glock;
+	ma.xgunlock       = qm_shm_gunlock;
 
 	if(shm_init_api(&ma)<0) {
 		LM_ERR("cannot initialize the core shm api\n");
 		return -1;
 	}
-	if(shm_core_lock_init()<0) {
+	if(qm_shm_lock_init()<0) {
 		LM_ERR("cannot initialize the core shm lock\n");
 		return -1;
 	}

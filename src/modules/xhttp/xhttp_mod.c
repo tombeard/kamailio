@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2010 Daniel-Constantin Mierla (asipto.com)
+ * Copyright (C) 2010-2017 Daniel-Constantin Mierla (asipto.com)
  *
  * This file is part of Kamailio, a free SIP server.
  *
@@ -13,8 +13,8 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License 
- * along with this program; if not, write to the Free Software 
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  *
  */
@@ -41,6 +41,7 @@
 #include "../../core/sip_msg_clone.h"
 #include "../../core/mod_fix.h"
 #include "../../core/pvar.h"
+#include "../../core/kemi.h"
 
 #include "api.h"
 #include "xhttp_trans.h"
@@ -66,6 +67,7 @@ static regex_t xhttp_url_skip_regexp;
 /** SL API structure */
 sl_api_t slb;
 
+static str xhttp_event_callback = STR_NULL;
 
 static cmd_export_t cmds[] = {
 	{"xhttp_reply",    (cmd_function)w_xhttp_send_reply,
@@ -86,23 +88,22 @@ static pv_export_t mod_pvs[] = {
 static param_export_t params[] = {
 	{"url_match",       PARAM_STRING, &xhttp_url_match},
 	{"url_skip",        PARAM_STRING, &xhttp_url_skip},
+	{"event_callback",  PARAM_STR,    &xhttp_event_callback},
 	{0, 0, 0}
 };
 
 /** module exports */
 struct module_exports exports= {
-	"xhttp",
+	"xhttp",         /* module name */
 	DEFAULT_DLFLAGS, /* dlopen flags */
-	cmds,
-	params,
-	0,          /* exported statistics */
-	0  ,        /* exported MI functions */
-	mod_pvs,    /* exported pseudo-variables */
-	0,          /* extra processes */
-	mod_init,   /* module initialization function */
-	0,
-	0,
-	0           /* per-child init function */
+	cmds,            /* cmd (cfg function) exports */
+	params,          /* param exports */
+	0,               /* exported rpc functions */
+	mod_pvs,         /* exported pseudo-variables */
+	0,               /* response handling function */
+	mod_init,        /* module init function */
+	0,               /* per-child init function */
+	0                /* module destroy function */
 };
 
 static tr_export_t mod_trans[] = {
@@ -112,25 +113,35 @@ static tr_export_t mod_trans[] = {
 	{ { 0, 0 }, 0 }
 };
 
-/** 
- * 
+/**
+ *
  */
 static int mod_init(void)
 {
 	struct nonsip_hook nsh;
 	int route_no;
-	
-	route_no=route_get(&event_rt, "xhttp:request");
-	if (route_no==-1)
-	{
-		LM_ERR("failed to find event_route[xhttp:request]\n");
-		return -1;
+	sr_kemi_eng_t *keng = NULL;
+
+	if(xhttp_event_callback.s!=NULL && xhttp_event_callback.len>0) {
+		keng = sr_kemi_eng_get();
+		if(keng==NULL) {
+			LM_ERR("failed to find kemi engine\n");
+			return -1;
+		}
+		xhttp_route_no=-1;
+	} else {
+		route_no=route_lookup(&event_rt, "xhttp:request");
+		if (route_no==-1)
+		{
+			LM_ERR("failed to find event_route[xhttp:request]\n");
+			return -1;
+		}
+		if (event_rt.rlist[route_no]==0)
+		{
+			LM_WARN("event_route[xhttp:request] is empty\n");
+		}
+		xhttp_route_no=route_no;
 	}
-	if (event_rt.rlist[route_no]==0)
-	{
-		LM_WARN("event_route[xhttp:request] is empty\n");
-	}
-	xhttp_route_no=route_no;
 	
 	/* bind the SL API */
 	if (sl_load_api(&slb)!=0) {
@@ -168,10 +179,6 @@ static int mod_init(void)
 	return 0;
 }
 
-int mod_register(char *path, int *dlflags, void *p1, void *p2)
-{
-	return register_trans_mod(path, mod_trans);
-}
 
 /** 
  * 
@@ -203,7 +210,7 @@ static char* xhttp_to_sip(sip_msg_t* msg, int* new_msg_len)
 	hp.host = &ip;
 	hp.port = &port;
 	init_dst_from_rcv(&dst, &msg->rcv);
-	via = via_builder(&via_len, &dst, 0, 0, &hp);
+	via = via_builder(&via_len, NULL, &dst, 0, 0, &hp);
 	if (via == 0)
 	{
 		LM_DBG("failed to build via\n");
@@ -244,10 +251,14 @@ static int xhttp_process_request(sip_msg_t* orig_msg,
 							  char* new_buf, unsigned int new_len)
 {
 	int ret;
+	int backup_rt;
 	sip_msg_t tmp_msg, *msg;
 	struct run_act_ctx ra_ctx;
-	
+	sr_kemi_eng_t *keng = NULL;
+	str evrtname = str_init("xhttp:request");
+
 	ret=0;
+	backup_rt = get_route_type();
 	if (new_buf && new_len)
 	{
 		memset(&tmp_msg, 0, sizeof(sip_msg_t));
@@ -273,17 +284,31 @@ static int xhttp_process_request(sip_msg_t* orig_msg,
 		LM_CRIT("strange message: %.*s\n", msg->len, msg->buf);
 		goto error;
 	}
+
+	set_route_type(EVENT_ROUTE);
 	if (exec_pre_script_cb(msg, REQUEST_CB_TYPE) == 0)
 	{
 		goto done;
 	}
 
 	init_run_actions_ctx(&ra_ctx);
-	if (run_actions(&ra_ctx, event_rt.rlist[xhttp_route_no], msg) < 0)
-	{
-		ret=-1;
-		LM_DBG("error while trying script\n");
-		goto done;
+	if(xhttp_route_no>=0) {
+		if (run_actions(&ra_ctx, event_rt.rlist[xhttp_route_no], msg) < 0)
+		{
+			ret=-1;
+			LM_DBG("error while trying script\n");
+			goto done;
+		}
+	} else {
+		keng = sr_kemi_eng_get();
+		if(keng!=NULL) {
+			if(keng->froute(msg, EVENT_ROUTE,
+						&xhttp_event_callback, &evrtname)<0) {
+				LM_ERR("error running event route kemi callback\n");
+			}
+		} else {
+			LM_ERR("no event route or kemi callback found for execution\n");
+		}
 	}
 
 done:
@@ -292,6 +317,7 @@ done:
 	{
 		free_sip_msg(msg);
 	}
+	set_route_type(backup_rt);
 	return ret;
 
 error:
@@ -354,11 +380,12 @@ static int xhttp_handler(sip_msg_t* msg)
 		} else {
 			DBG("new fake msg created (%d bytes):\n<%.*s>\n",
 					fake_msg_len, fake_msg_len, fake_msg);
-			if (xhttp_process_request(msg, fake_msg, fake_msg_len)<0)
+			if (xhttp_process_request(msg, fake_msg, fake_msg_len)<0) {
 				ret=NONSIP_MSG_ERROR;
-				pkg_free(fake_msg);
 			}
-			return ret;
+			pkg_free(fake_msg);
+		}
+		return ret;
 	} else {
 		LM_DBG("http msg unchanged (%d bytes):\n<%.*s>\n",
 				msg->len, msg->len, msg->buf);
@@ -399,17 +426,20 @@ static int xhttp_send_reply(sip_msg_t *msg, int code, str *reason,
 			return -1;
 		}
 		pkg_free(tbuf.s);
+		LM_DBG("response with content-type: %.*s\n", ctype->len, ctype->s);
 	}
 
 	if(body!=NULL && body->len>0)
 	{
-		if (add_lump_rpl(msg, body->s, body->len, LUMP_RPL_BODY) < 0)
+		if (add_lump_rpl(msg, body->s, body->len, LUMP_RPL_BODY) == 0)
 		{
 			LM_ERR("Error while adding reply lump\n");
 			return -1;
 		}
+		LM_DBG("response with body: %.*s\n", body->len, body->s);
 	}
-	if (slb.freply(msg, code, reason) < 0)
+	LM_DBG("sending out response: %d %.*s\n", code, reason->len, reason->s);
+	if (slb.sreply(msg, code, reason) < 0)
 	{
 		LM_ERR("Error while sending reply\n");
 		return -1;
@@ -512,6 +542,30 @@ int bind_xhttp(xhttp_api_t* api)
 	}
 	api->reply = xhttp_send_reply;
 	return 0;
+}
+
+/**
+ *
+ */
+/* clang-format off */
+static sr_kemi_t sr_kemi_xhttp_exports[] = {
+	{ str_init("xhttp"), str_init("xhttp_reply"),
+		SR_KEMIP_INT, xhttp_send_reply,
+		{ SR_KEMIP_INT, SR_KEMIP_STR, SR_KEMIP_STR,
+			SR_KEMIP_STR, SR_KEMIP_NONE, SR_KEMIP_NONE }
+	},
+
+	{ {0, 0}, {0, 0}, 0, NULL, { 0, 0, 0, 0, 0, 0 } }
+};
+/* clang-format on */
+
+/**
+ *
+ */
+int mod_register(char *path, int *dlflags, void *p1, void *p2)
+{
+	sr_kemi_modules_add(sr_kemi_xhttp_exports);
+	return register_trans_mod(path, mod_trans);
 }
 
 /** @} */

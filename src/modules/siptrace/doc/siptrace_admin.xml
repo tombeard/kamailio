@@ -21,11 +21,11 @@
 		the Homer encapsulation protocol, or plain SIP mode)
 	</para>
 	<para>
-		There are two ways of storing information:
+		There are multiple ways of storing information:
 		<itemizedlist>
 		<listitem>
 		<para>
-		by calling the sip_trace() method explicitely in the &kamailio; configuration
+		by calling the sip_trace() method explicitly in the &kamailio; configuration
 		file. In this case the original message is processed.
 		</para>
 		</listitem>
@@ -36,6 +36,11 @@
 		message sent forward is processed. The logging mechanism is based on
 		TM/SL callbacks, so only messages processed with the TM module or sent statelessly
 		are logged.
+		</para>
+		</listitem>
+		<listitem>
+		<para>
+		by setting <quote>trace_mode</quote> to mirror all traffic.
 		</para>
 		</listitem>
 		</itemizedlist>
@@ -97,14 +102,14 @@
 		</para>
 		<para>
 		<emphasis>
-			Default value is "mysql://kamailio:kamailiorw@localhost/okamailio".
+			Default value is "&defaultdb;".
 		</emphasis>
 		</para>
 		<example>
 		<title>Set <varname>db_url</varname> parameter</title>
 		<programlisting format="linespecific">
 ...
-modparam("siptrace", "db_url", "mysql://user:passwd@host/dbname")
+modparam("siptrace", "db_url", "&exampledb;")
 ...
 </programlisting>
 		</example>

@@ -29,6 +29,8 @@
 #include "app_python_mod.h"
 #include "python_support.h"
 
+static char *make_message(const char *fmt, va_list ap);
+
 void python_handle_exception(const char *fmt, ...)
 {
 	PyObject *pResult;
@@ -40,6 +42,7 @@ void python_handle_exception(const char *fmt, ...)
 	int i;
 	char *srcbuf;
 	int exc_exit = 0;
+	va_list ap;
 
 	// We don't want to generate traceback when no errors occurred
 	if (!PyErr_Occurred())
@@ -47,19 +50,24 @@ void python_handle_exception(const char *fmt, ...)
 
 	if (fmt == NULL)
 		srcbuf = NULL;
-	else
-		srcbuf = make_message(fmt);
+	else {
+		va_start(ap, fmt);
+		srcbuf = make_message(fmt, ap);
+		va_end(ap);
+	}
 
 	PyErr_Fetch(&exception, &v, &tb);
 	PyErr_Clear();
 	if (exception == NULL) {
 		LM_ERR("Can't get traceback, PyErr_Fetch() has failed.\n");
+		if (srcbuf) pkg_free(srcbuf);
 		return;
 	}
 
 	PyErr_NormalizeException(&exception, &v, &tb);
 	if (exception == NULL) {
 		LM_ERR("Can't get traceback, PyErr_NormalizeException() has failed.\n");
+		if (srcbuf) pkg_free(srcbuf);
 		return;
 	}
 
@@ -70,6 +78,7 @@ void python_handle_exception(const char *fmt, ...)
 	Py_XDECREF(tb);
 	if (args == NULL) {
 		LM_ERR("Can't get traceback, PyTuple_Pack() has failed.\n");
+		if (srcbuf) pkg_free(srcbuf);
 		return;
 	}
 
@@ -77,6 +86,7 @@ void python_handle_exception(const char *fmt, ...)
 	Py_DECREF(args);
 	if (pResult == NULL) {
 		LM_ERR("Can't get traceback, traceback.format_exception() has failed.\n");
+		if (srcbuf) pkg_free(srcbuf);
 		return;
 	}
 
@@ -86,6 +96,7 @@ void python_handle_exception(const char *fmt, ...)
 	{
 		LM_ERR("Can't allocate memory (%lu bytes), pkg_realloc() has failed."
 				" Not enough memory.\n", (unsigned long)(buflen * sizeof(char *)));
+		if (srcbuf) pkg_free(srcbuf);
 		return;
 	}
 	memset(buf, 0, buflen * sizeof(char));
@@ -97,6 +108,7 @@ void python_handle_exception(const char *fmt, ...)
 			Py_DECREF(pResult);
 			if (buf)
 				pkg_free(buf);
+			if (srcbuf) pkg_free(srcbuf);
 			return;
 		}
 
@@ -108,19 +120,21 @@ void python_handle_exception(const char *fmt, ...)
 			Py_DECREF(pResult);
 			if (buf)
 				pkg_free(buf);
+			if (srcbuf) pkg_free(srcbuf);
 			return;
 		}
 
 		msglen = strlen(msg);
 		buflen += ++msglen;
 
-		buf = (char *)pkg_realloc(buf, buflen * sizeof(char));
+		buf = (char *)pkg_reallocxf(buf, buflen * sizeof(char));
 		if (!buf)
 		{
 			LM_ERR("Can't allocate memory (%lu bytes), pkg_realloc() has failed."
 					" Not enough memory.\n", (unsigned long)(buflen * sizeof(char *)));
 			Py_DECREF(line);
 			Py_DECREF(pResult);
+			if (srcbuf) pkg_free(srcbuf);
 			return;
 		}
 
@@ -176,12 +190,11 @@ PyObject *InitTracebackModule()
 }
 
 
-char *make_message(const char *fmt, ...)
+static char *make_message(const char *fmt, va_list ap)
 {
 	int n;
 	size_t size;
 	char *p, *np;
-	va_list ap;
 
 	size = 100;     /* Guess we need no more than 100 bytes. */
 	p = (char *)pkg_realloc(NULL, size * sizeof(char));
@@ -195,9 +208,7 @@ char *make_message(const char *fmt, ...)
 
 	while (1)
 	{
-		va_start(ap, fmt);
 		n = vsnprintf(p, size, fmt, ap);
-		va_end(ap);
 
 		if (n > -1 && n < size)
 			return p;

@@ -17,7 +17,7 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *
- * 
+ *
  */
 
 
@@ -26,6 +26,7 @@
 
 #include "../../core/parser/msg_parser.h"
 
-int sd_lookup(struct sip_msg* _msg, char* _table, char* _str2);
+int w_sd_lookup(struct sip_msg* _msg, char* _table, char* _owner);
+int sd_lookup_owner(struct sip_msg* _msg, str* _stable, str* _sowner);
 
 #endif /* _SDLOOKUP_H_ */

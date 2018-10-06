@@ -172,7 +172,7 @@ void add_contacts_avp(str *uri, str *dst_uri, str *path, str *sock_str,
  * contact is the last one in its priority class.  Finally, removes
  * all branches from destination set.
  */
-int t_load_contacts(struct sip_msg* msg, char* key, char* value)
+int ki_t_load_contacts(struct sip_msg* msg)
 {
 	branch_t *branch;
 	str *ruri, sock_str;
@@ -357,6 +357,11 @@ int t_load_contacts(struct sip_msg* msg, char* key, char* value)
 	return 1;
 }
 
+int t_load_contacts(struct sip_msg* msg, char* key, char* value)
+{
+	return ki_t_load_contacts(msg);
+}
+
 void add_contact_flows_avp(str *uri, str *dst_uri, str *path, str *sock_str,
 		unsigned int flags, str *instance, str *ruid,
 		str *location_ua, sr_xavp_t *ulattrs_xavp)
@@ -431,7 +436,7 @@ void add_contact_flows_avp(str *uri, str *dst_uri, str *path, str *sock_str,
  * Returns 1, if contacts_avp was not empty and a destination set was
  * successfully added.  Returns -2, if contacts_avp was empty and thus
  * there was nothing to do. Returns -1 in case of an error. */
-int t_next_contacts(struct sip_msg* msg, char* key, char* value)
+int ki_t_next_contacts(struct sip_msg* msg)
 {
 	str uri, dst_uri, path, instance, host, sock_str, ruid, location_ua;
 	struct socket_info *sock;
@@ -553,7 +558,9 @@ int t_next_contacts(struct sip_msg* msg, char* key, char* value)
 	}
 
 	if (dst_uri.len) {
-		set_dst_uri(msg, &dst_uri);
+		if(set_dst_uri(msg, &dst_uri)<0) {
+			LM_ERR("failed to set dst uri\n");
+		}
 	} else {
 		reset_dst_uri(msg);
 	}
@@ -635,7 +642,11 @@ int t_next_contacts(struct sip_msg* msg, char* key, char* value)
 		}
 
 		vavp = xavp_get(&flags_name, xavp->val.v.xavp);
-		flags = vavp->val.v.i;
+		if (vavp != NULL) {
+			flags = vavp->val.v.i;
+		} else {
+			flags = 0;
+		}
 
 		vavp = xavp_get(&ruid_name, xavp->val.v.xavp);
 		if (vavp != NULL) {
@@ -732,6 +743,11 @@ check_q_flag:
 	return 1;
 }
 
+int t_next_contacts(struct sip_msg* msg, char* key, char* value)
+{
+	return ki_t_next_contacts(msg);
+}
+
 /*
  * Adds to request a new destination set that includes contacts
  * from contact_flows_avp.  Only one contact with same +sip.instance
@@ -742,7 +758,7 @@ check_q_flag:
  * Returns 1, if contact_flows_avp was not empty and a destination set was
  * successfully added.  Returns -2, if contact_flows_avp was empty and thus
  * there was nothing to do. Returns -1 in case of an error. */
-int t_next_contact_flow(struct sip_msg* msg, char* key, char* value)
+int ki_t_next_contact_flow(struct sip_msg* msg)
 {
 	str uri, dst_uri, path, instance, host, ruid, location_ua;
 	str this_instance;
@@ -762,8 +778,7 @@ int t_next_contact_flow(struct sip_msg* msg, char* key, char* value)
 	/* Load Request-URI and branches */
 	t_get_this_branch_instance(msg, &this_instance);
 
-	if (this_instance.len == 0)
-	{
+	if (this_instance.len == 0) {
 		LM_DBG("No instance on this branch\n");
 		return -2;
 	}
@@ -780,13 +795,10 @@ int t_next_contact_flow(struct sip_msg* msg, char* key, char* value)
 		next_xavp = xavp_get_next(xavp);
 
 		vavp = xavp_get(&instance_name, xavp->val.v.xavp);
-		if (vavp == NULL)
-		{
+		if (vavp == NULL) {
 			/* Does not match this instance */
 			goto next_xavp;
-		}
-		else
-		{
+		} else {
 			instance = vavp->val.v.s;
 			if ((instance.len != this_instance.len) ||
 					(strncmp(instance.s, this_instance.s, instance.len) != 0))
@@ -795,7 +807,11 @@ int t_next_contact_flow(struct sip_msg* msg, char* key, char* value)
 		}
 
 		vavp = xavp_get(&uri_name, xavp->val.v.xavp);
-		uri = vavp->val.v.s;
+		if (vavp == NULL) {
+			goto next_xavp;
+		} else {
+			uri = vavp->val.v.s;
+		}
 
 		vavp = xavp_get(&dst_uri_name, xavp->val.v.xavp);
 		if (vavp != NULL) {
@@ -830,13 +846,27 @@ int t_next_contact_flow(struct sip_msg* msg, char* key, char* value)
 		}
 
 		vavp = xavp_get(&flags_name, xavp->val.v.xavp);
-		flags = vavp->val.v.i;
+		if (vavp != NULL) {
+			flags = vavp->val.v.i;
+		} else {
+			flags = 0;
+		}
 
 		vavp = xavp_get(&ruid_name, xavp->val.v.xavp);
-		ruid = vavp->val.v.s;
+		if (vavp != NULL) {
+			ruid = vavp->val.v.s;
+		} else {
+			ruid.s = "";
+			ruid.len = 0;
+		}
 
 		vavp = xavp_get(&ua_name, xavp->val.v.xavp);
-		location_ua = vavp->val.v.s;
+		if (vavp != NULL) {
+			location_ua = vavp->val.v.s;
+		} else {
+			location_ua.s = "";
+			location_ua.len = 0;
+		}
 
 		LM_DBG("Appending branch uri-'%.*s' dst-'%.*s' path-'%.*s'"
 				" inst-'%.*s' ruid-'%.*s' location_ua-'%.*s'\n",
@@ -865,4 +895,9 @@ next_xavp:
 	}
 
 	return -1;
+}
+
+int t_next_contact_flow(struct sip_msg* msg, char* key, char* value)
+{
+	return ki_t_next_contact_flow(msg);
 }

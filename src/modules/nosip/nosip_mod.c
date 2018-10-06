@@ -13,8 +13,8 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License 
- * along with this program; if not, write to the Free Software 
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  *
  */
@@ -39,7 +39,7 @@
 
 MODULE_VERSION
 
-static int nosip_rcv_msg(void* data);
+static int nosip_rcv_msg(sr_event_param_t *evp);
 static int mod_init(void);
 
 static int pv_get_nosip(struct sip_msg *msg, pv_param_t *param,
@@ -71,28 +71,26 @@ static param_export_t params[] = {
 };
 
 /** module exports */
-struct module_exports exports= {
-	"nosip",
+struct module_exports exports = {
+	"nosip",         /* module name */
 	DEFAULT_DLFLAGS, /* dlopen flags */
-	cmds,
-	params,
-	0,          /* exported statistics */
-	0  ,        /* exported MI functions */
-	mod_pvs,    /* exported pseudo-variables */
-	0,          /* extra processes */
-	mod_init,   /* module initialization function */
-	0,
-	0,
-	0           /* per-child init function */
+	cmds,            /* cmd (cfg function) exports */
+	params,          /* param exports */
+	0,               /* RPC method exports */
+	mod_pvs,         /* pseudo-variables exports */
+	0,               /* response handling function */
+	mod_init,        /* module init function */
+	0,               /* per-child init function */
+	0                /* module destroy function */
 };
 
-/** 
- * 
+/**
+ *
  */
 static int mod_init(void)
 {
 	int route_no;
-	
+
 	route_no=route_get(&event_rt, "nosip:msg");
 	if (route_no==-1)
 	{
@@ -105,7 +103,7 @@ static int mod_init(void)
 		return -1;
 	}
 	nosip_route_no=route_no;
-	
+
 	/* register non-sip hooks */
 	sr_event_register_cb(SREV_RCV_NOSIP, nosip_rcv_msg);
 
@@ -128,8 +126,8 @@ static int mod_init(void)
 	return 0;
 }
 
-/** 
- * 
+/**
+ *
  */
 static int pv_get_nosip(sip_msg_t *msg, pv_param_t *param,
 		pv_value_t *res)
@@ -143,17 +141,17 @@ static int pv_get_nosip(sip_msg_t *msg, pv_param_t *param,
 }
 
 
-/** 
- * 
+/**
+ *
  */
-static int nosip_rcv_msg(void *data)
+static int nosip_rcv_msg(sr_event_param_t *evp)
 {
 	sip_msg_t* msg;
 	regmatch_t pmatch;
 	char c;
 	struct run_act_ctx ra_ctx;
 
-	msg = (sip_msg_t*)data;
+	msg = (sip_msg_t*)evp->data;
 
 	if(nosip_msg_skip!=NULL || nosip_msg_match!=NULL)
 	{

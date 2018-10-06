@@ -82,6 +82,29 @@ stat_var* rcv_rpls_486;
 stat_var* rcv_rpls_5xx;
 stat_var* rcv_rpls_6xx;
 
+#define VAR_NAME(method) rcv_rpls_ ## method
+
+#define STAT_NAME(method, group) "rcv_replies_" #group "xx_" #method
+
+#define DECLARE_STAT_VARS(method) stat_var* VAR_NAME(method)[6];
+
+#define DECLARE_STATS(method) \
+      { STAT_NAME(method, 1), 0, &VAR_NAME(method)[0] }, \
+      { STAT_NAME(method, 2), 0, &VAR_NAME(method)[1] }, \
+      { STAT_NAME(method, 3), 0, &VAR_NAME(method)[2] }, \
+      { STAT_NAME(method, 4), 0, &VAR_NAME(method)[3] }, \
+      { STAT_NAME(method, 5), 0, &VAR_NAME(method)[4] }, \
+      { STAT_NAME(method, 6), 0, &VAR_NAME(method)[5] }
+
+DECLARE_STAT_VARS(invite);
+DECLARE_STAT_VARS(cancel);
+DECLARE_STAT_VARS(bye);
+DECLARE_STAT_VARS(reg);
+DECLARE_STAT_VARS(message);
+DECLARE_STAT_VARS(prack);
+DECLARE_STAT_VARS(update);
+DECLARE_STAT_VARS(refer);
+
 /*! exported core statistics */
 stat_export_t core_stats[] = {
 	{"rcv_requests" ,         0,  &rcv_reqs              },
@@ -121,6 +144,14 @@ stat_export_t core_stats[] = {
 	{"bad_URIs_rcvd",         0,  &bad_URIs              },
 	{"unsupported_methods",   0,  &unsupported_methods   },
 	{"bad_msg_hdr",           0,  &bad_msg_hdr           },
+      DECLARE_STATS(invite),
+      DECLARE_STATS(cancel),
+      DECLARE_STATS(bye),
+      DECLARE_STATS(reg),
+      DECLARE_STATS(message),
+      DECLARE_STATS(prack),
+      DECLARE_STATS(update),
+      DECLARE_STATS(refer),
 	{0,0,0}
 };
 
@@ -200,6 +231,28 @@ static int km_cb_req_stats(struct sip_msg *msg,
 	return 1;
 }
 
+static int km_cb_rpl_stats_by_method(struct sip_msg *msg,
+		unsigned int flags, void *param)
+{
+      int method = get_cseq(msg)->method_id;
+      int group = msg->first_line.u.reply.statuscode / 100 - 1;
+
+      if (group >= 0 && group <= 5) {
+            switch(method) {
+                  case METHOD_INVITE: update_stat( VAR_NAME(invite)[group], 1); break;
+                  case METHOD_CANCEL: update_stat( VAR_NAME(cancel)[group], 1); break;
+                  case METHOD_BYE: update_stat( VAR_NAME(bye)[group], 1); break;
+                  case METHOD_REGISTER: update_stat( VAR_NAME(reg)[group], 1); break;
+                  case METHOD_MESSAGE: update_stat( VAR_NAME(message)[group], 1); break;
+                  case METHOD_PRACK: update_stat( VAR_NAME(prack)[group], 1); break;
+                  case METHOD_UPDATE: update_stat( VAR_NAME(update)[group], 1); break;
+                  case METHOD_REFER: update_stat( VAR_NAME(refer)[group], 1); break;
+             }
+      }
+
+      return 1;
+}
+
 static int km_cb_rpl_stats(struct sip_msg *msg,
 		unsigned int flags, void *param)
 {
@@ -259,11 +312,11 @@ static int km_cb_rpl_stats(struct sip_msg *msg,
 }
 
 
-static int sts_update_core_stats(void *data)
+static int sts_update_core_stats(sr_event_param_t *evp)
 {
 	int type;
 
-	type = (int)(long)data;
+	type = (int)(long)evp;
 	switch(type) {
 		case 1:
 			/* fwd_requests */
@@ -321,6 +374,10 @@ int register_core_stats(void)
 		LM_ERR("failed to register PRE request callback\n");
 		return -1;
 	}
+	if (register_script_cb(km_cb_rpl_stats_by_method, PRE_SCRIPT_CB|ONREPLY_CB, 0)<0 ) {
+		LM_ERR("failed to register PRE request callback\n");
+		return -1;
+	}
 	if (stats_proc_stats_init_rpc()<0) return -1;
 	sr_event_register_cb(SREV_CORE_STATS, sts_update_core_stats);
 
@@ -336,6 +393,7 @@ int register_core_stats(void)
 struct rpc_list_params {
 	rpc_t* rpc;
 	void* ctx;
+	void* hst;
 	int clear;
 };
 
@@ -421,11 +479,157 @@ static void rpc_stats_get_statistics(rpc_t* rpc, void* ctx)
 	return;
 }
 
+/**
+ * Satistic getter RPC callback.
+ */
+static void rpc_fetch_grp_vars_cbk(void* p, str* g, str* n, counter_handle_t h)
+{
+	struct rpc_list_params *packed_params;
+	rpc_t* rpc;
+	void* ctx;
+	void* hst;
+	char nbuf[128];
+	char vbuf[32];
+
+	packed_params = p;
+	rpc = packed_params->rpc;
+	ctx = packed_params->ctx;
+	hst = packed_params->hst;
+
+	snprintf(nbuf, 127, "%.*s.%.*s", g->len, g->s, n->len, n->s);
+	snprintf(vbuf, 31, "%lu", counter_get_val(h));
+	if(rpc->struct_add(hst, "s", nbuf, vbuf)<0)
+	{
+		rpc->fault(ctx, 500, "Internal error");
+		return;
+	}
+}
+
+/**
+ * Group statistic getter RPC callback.
+ */
+static void rpc_fetch_all_grps_cbk(void* p, str* g)
+{
+	counter_iterate_grp_vars(g->s, rpc_fetch_grp_vars_cbk, p);
+}
+
+/**
+ * All statistic getter RPC callback.
+ */
+static void stats_fetch_all(rpc_t* rpc, void* ctx, char* stat)
+{
+	int len = strlen(stat);
+	struct rpc_list_params packed_params;
+	str s_statistic;
+	stat_var *s_stat;
+	void *th;
+	char nbuf[128];
+	char vbuf[32];
+	char *m;
+	char *n;
+	int i;
+
+	if (rpc->add(ctx, "{", &th) < 0)
+	{
+		rpc->fault(ctx, 500, "Internal error creating root struct");
+		return;
+	}
+
+	if (len==3 && strcmp("all", stat)==0) {
+		packed_params.rpc = rpc;
+		packed_params.ctx = ctx;
+		packed_params.hst = th;
+		counter_iterate_grp_names(rpc_fetch_all_grps_cbk, &packed_params);
+	}
+	else if (stat[len-1]==':') {
+		packed_params.rpc = rpc;
+		packed_params.ctx = ctx;
+		packed_params.hst = th;
+		stat[len-1] = '\0';
+		counter_iterate_grp_vars(stat, rpc_fetch_grp_vars_cbk, &packed_params);
+		stat[len-1] = ':';
+	}
+	else {
+		s_statistic.s = stat;
+		s_statistic.len = strlen(stat);
+		s_stat = get_stat(&s_statistic);
+		if (s_stat) {
+			snprintf(nbuf, 127, "%s.%s",
+					ZSW(get_stat_module(s_stat)), ZSW(get_stat_name(s_stat)));
+			snprintf(vbuf, 31, "%lu", get_stat_val(s_stat));
+			if(rpc->struct_add(th, "s", nbuf, vbuf)<0)
+			{
+				rpc->fault(ctx, 500, "Internal error");
+				return;
+			}
+		} else {
+			n = strchr(stat, '.');
+			if(n==NULL) {
+				n =strchr(stat, ':');
+			}
+			if(n==NULL) {
+				return;
+			}
+			n++;
+			s_statistic.s = n;
+			s_statistic.len = strlen(n);
+			s_stat = get_stat(&s_statistic);
+			if (s_stat) {
+				m = get_stat_module(s_stat);
+				if(m==NULL) {
+					return;
+				}
+				for(i=0;  m[i]!=0 && stat[i]!=0; i++) {
+					if(stat[i]!=m[i]) {
+						/* module name mismatch */
+						return;
+					}
+				}
+				if(m[i]!=0 || (stat[i]!='.' && stat[i]!=':')) {
+					/* module name mismatch */
+					return;
+				}
+
+				snprintf(nbuf, 127, "%s.%s",
+						m, ZSW(get_stat_name(s_stat)));
+				snprintf(vbuf, 31, "%lu", get_stat_val(s_stat));
+				if(rpc->struct_add(th, "s", nbuf, vbuf)<0)
+				{
+					rpc->fault(ctx, 500, "Internal error");
+					return;
+				}
+			}
+		}
+	}
+}
+
+/**
+ * RPC statistics getter.
+ */
+static void rpc_stats_fetch_statistics(rpc_t* rpc, void* ctx)
+{
+	char* stat;
+
+	if (stats_support()==0) {
+		rpc->fault(ctx, 400, "stats support not enabled");
+		return;
+	}
+	if (rpc->scan(ctx, "s", &stat) < 1) {
+		rpc->fault(ctx, 400, "Please provide which stats to retrieve");
+		return;
+	}
+	stats_fetch_all(rpc, ctx, stat);
+	while((rpc->scan(ctx, "*s", &stat)>0)) {
+		stats_fetch_all(rpc, ctx, stat);
+	}
+	return;
+}
 
 /**
  * Satistic reset/clear-er RPC callback..
  */
-static void rpc_reset_or_clear_grp_vars_cbk(void* p, str* g, str* n, counter_handle_t h)
+static void rpc_reset_or_clear_grp_vars_cbk(void* p, str* g, str* n,
+		counter_handle_t h)
 {
 	struct rpc_list_params *packed_params;
 	rpc_t* rpc;
@@ -569,11 +773,19 @@ static void rpc_stats_clear_statistics(rpc_t* rpc, void* ctx)
  */
 static const char* rpc_stats_get_statistics_doc[2] =
 	{"get core and modules stats",   0};
+
+/**
+ * RPC statistics getter doc.
+ */
+static const char* rpc_stats_fetch_statistics_doc[2] =
+	{"fetch core and modules stats",   0};
+
 /**
  * RPC statistics reseter doc.
  */
 static const char* rpc_stats_reset_statistics_doc[2] =
 	{"reset core and modules stats (silent operation)", 0};
+
 /**
  * RPC statistics clearer doc.
  */
@@ -587,6 +799,8 @@ rpc_export_t kex_stats_rpc[] =
 {
 	{"stats.get_statistics",   rpc_stats_get_statistics,
 							rpc_stats_get_statistics_doc,   RET_ARRAY},
+	{"stats.fetch",			rpc_stats_fetch_statistics,
+							rpc_stats_fetch_statistics_doc, 0},
 	{"stats.reset_statistics", rpc_stats_reset_statistics,
 							rpc_stats_reset_statistics_doc, 0},
 	{"stats.clear_statistics", rpc_stats_clear_statistics,

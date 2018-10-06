@@ -32,6 +32,7 @@
 #include "../../core/mod_fix.h"
 #include "../../core/timer_proc.h"
 #include "../../core/route_struct.h"
+#include "../../core/kemi.h"
 
 #include "auth_xkeys.h"
 
@@ -76,14 +77,12 @@ struct module_exports exports = {
 	DEFAULT_DLFLAGS, /* dlopen flags */
 	cmds,
 	params,
-	0,
-	0,              /* exported MI functions */
+	0,              /* exported RPC methods */
 	0,              /* exported pseudo-variables */
-	0,              /* extra processes */
-	mod_init,       /* module initialization function */
 	0,              /* response function */
-	mod_destroy,    /* destroy function */
-	child_init      /* per child init function */
+	mod_init,       /* module initialization function */
+	child_init,     /* per child init function */
+	mod_destroy     /* destroy function */
 };
 
 
@@ -108,6 +107,7 @@ static int child_init(int rank)
 {
 	return 0;
 }
+
 /**
  * destroy module function
  */
@@ -115,7 +115,9 @@ static void mod_destroy(void)
 {
 }
 
-
+/**
+ *
+ */
 static int w_auth_xkeys_add(sip_msg_t* msg, char* hdr, char* key,
 		char* alg, char* data)
 {
@@ -151,6 +153,21 @@ static int w_auth_xkeys_add(sip_msg_t* msg, char* hdr, char* key,
 	return 1;
 }
 
+/**
+ *
+ */
+static int ki_auth_xkeys_add(sip_msg_t* msg, str *shdr, str *skey, str *salg,
+			str *sdata)
+{
+	if(auth_xkeys_add(msg, shdr, skey, salg, sdata)<0)
+		return -1;
+
+	return 1;
+}
+
+/**
+ *
+ */
 static int w_auth_xkeys_check(sip_msg_t* msg, char* hdr, char* key,
 		char* alg, char* data)
 {
@@ -186,6 +203,21 @@ static int w_auth_xkeys_check(sip_msg_t* msg, char* hdr, char* key,
 	return 1;
 }
 
+/**
+ *
+ */
+static int ki_auth_xkeys_check(sip_msg_t* msg, str *shdr, str *skey, str *salg,
+			str *sdata)
+{
+	if(auth_xkeys_check(msg, shdr, skey, salg, sdata)<0)
+		return -1;
+
+	return 1;
+}
+
+/**
+ *
+ */
 static int fixup_auth_xkeys_add(void** param, int param_no)
 {
 	if(fixup_spve_null(param, 1)<0)
@@ -193,6 +225,9 @@ static int fixup_auth_xkeys_add(void** param, int param_no)
 	return 0;
 }
 
+/**
+ *
+ */
 static int fixup_auth_xkeys_check(void** param, int param_no)
 {
 	if(fixup_spve_null(param, 1)<0)
@@ -200,6 +235,9 @@ static int fixup_auth_xkeys_check(void** param, int param_no)
 	return 0;
 }
 
+/**
+ *
+ */
 int authx_xkey_param(modparam_t type, void* val)
 {
 	str s;
@@ -209,4 +247,33 @@ int authx_xkey_param(modparam_t type, void* val)
 	s.s = (char*)val;
 	s.len = strlen(s.s);
 	return authx_xkey_add_params(&s);
+}
+
+/**
+ *
+ */
+/* clang-format off */
+static sr_kemi_t sr_kemi_auth_xkeys_exports[] = {
+	{ str_init("auth_xkeys"), str_init("auth_xkeys_add"),
+		SR_KEMIP_INT, ki_auth_xkeys_add,
+		{ SR_KEMIP_STR, SR_KEMIP_STR, SR_KEMIP_STR,
+			SR_KEMIP_STR, SR_KEMIP_NONE, SR_KEMIP_NONE }
+	},
+	{ str_init("auth_xkeys"), str_init("auth_xkeys_check"),
+		SR_KEMIP_INT, ki_auth_xkeys_check,
+		{ SR_KEMIP_STR, SR_KEMIP_STR, SR_KEMIP_STR,
+			SR_KEMIP_STR, SR_KEMIP_NONE, SR_KEMIP_NONE }
+	},
+
+	{ {0, 0}, {0, 0}, 0, NULL, { 0, 0, 0, 0, 0, 0 } }
+};
+/* clang-format on */
+
+/**
+ *
+ */
+int mod_register(char *path, int *dlflags, void *p1, void *p2)
+{
+	sr_kemi_modules_add(sr_kemi_auth_xkeys_exports);
+	return 0;
 }

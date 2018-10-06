@@ -317,7 +317,7 @@ modparam("auth", "qop", "auth")   # set qop=auth
    Note: nonce_count should be enabled only in stateful mode (a
    transaction should be created prior to the authentication check to
    absorb possible retransmissions and all the replies should be sent
-   statefuly, using t_reply()). If nonce_count and the authentication
+   statefully, using t_reply()). If nonce_count and the authentication
    checks are used in the stateless mode then all retransmissions will be
    challenged.
 
@@ -381,7 +381,7 @@ route{
 3.6. one_time_nonce (boolean)
 
    If set to 1 nonce reuse is disabled: each nonce is allowed only once,
-   in the first reponse to a challenge. All the messages will be
+   in the first response to a challenge. All the messages will be
    challenged, even retransmissions. Stateful mode should be used, to
    catch retransmissions before the authentication checks (using
    t_newtran() before the authentication checks and sending all the
@@ -429,19 +429,19 @@ modparam("auth", "one_time_nonce", 1)
    size).
 
    Instead of using single arrays for keeping nonce state, these arrays
-   can be divided into more partitions. Each ser process is assigned to
-   one of these partitions, allowing for higher concurrency on multi-CPU
-   machines. Besides increasing performance, increasing nid_pool_no has
-   also a negative effect: it could decrease the maximum supported
-   in-flight nonces in certain conditions. In the worst case, when only
-   one ser process receives most of the traffic (e.g. very busy tcp
-   connection between two proxies), the in-flight nonces could be limited
-   to the array size (nc_array_size for nonce_count or otn_in_flight_no
-   for one_time_nonce) divided by the partitions number (nid_pool_no).
-   However for normal traffic, when the process receiving a message is
-   either random or chosen in a round-robin fashion the maximum in-flight
-   nonces number will be very little influenced by nid_pool_no (the
-   messages will be close to equally distributed to processes using
+   can be divided into more partitions. Each Kamailio process is assigned
+   to one of these partitions, allowing for higher concurrency on
+   multi-CPU machines. Besides increasing performance, increasing
+   nid_pool_no has also a negative effect: it could decrease the maximum
+   supported in-flight nonces in certain conditions. In the worst case,
+   when only one Kamailio process receives most of the traffic (e.g. very
+   busy tcp connection between two proxies), the in-flight nonces could be
+   limited to the array size (nc_array_size for nonce_count or
+   otn_in_flight_no for one_time_nonce) divided by the partitions number
+   (nid_pool_no). However for normal traffic, when the process receiving a
+   message is either random or chosen in a round-robin fashion the maximum
+   in-flight nonces number will be very little influenced by nid_pool_no
+   (the messages will be close to equally distributed to processes using
    different partitions).
 
    nid_pool_no value should be one of: 1, 2, 4, 8, 16, 32 or 64 (the
@@ -700,12 +700,12 @@ modparam("auth", "add_authinfo_hdr", yes)
 ...
 if (www_authenticate("realm", "subscriber")) {
     consume_credentials();
-};
+}
 ...
 
 4.2. has_credentials(realm)
 
-   This function returns true of the request has Autorization or
+   This function returns true of the request has Authorization or
    Proxy-Authorization header with provided realm. The parameter can be
    string with pseudo-variables.
 
@@ -721,8 +721,8 @@ if (has_credentials("myrealm")) {
    The function challenges a user agent. It will generate a WWW-Authorize
    header field containing a digest challenge, it will put the header
    field into a response generated from the request the server is
-   processing and send the reply. Upon reception of such a reply the user
-   agent should compute credentials and retry the request. For more
+   processing and send the 401 reply. Upon reception of such a reply the
+   user agent should compute credentials and retry the request. For more
    information regarding digest authentication see RFC2617. See module
    parameter force_stateless_reply regarding sending of the reply.
 
@@ -750,6 +750,7 @@ if (has_credentials("myrealm")) {
 ...
 if (!www_authenticate("$td", "subscriber")) {
         www_challenge("$td", "1");
+        exit;
 }
 ...
 
@@ -758,10 +759,10 @@ if (!www_authenticate("$td", "subscriber")) {
    The function challenges a user agent. It will generate a
    Proxy-Authorize header field containing a digest challenge, it will put
    the header field into a response generated from the request the server
-   is processing and send the reply. Upon reception of such a reply the
-   user agent should compute credentials and retry the request. For more
-   information regarding digest authentication see RFC2617. See module
-   parameter force_stateless_reply regarding sending of the reply.
+   is processing and send the 407 reply. Upon reception of such a reply
+   the user agent should compute credentials and retry the request. For
+   more information regarding digest authentication see RFC2617. See
+   module parameter force_stateless_reply regarding sending of the reply.
 
    Meaning of the parameters is the same as for function
    www_challenge(realm, flags)
@@ -772,7 +773,8 @@ if (!www_authenticate("$td", "subscriber")) {
 ...
 if (!proxy_authenticate("$fd", "subscriber")) {
         proxy_challenge("$fd", "1");
-};
+        exit;
+}
 ...
 
 4.5.  auth_challenge(realm, flags)
@@ -780,7 +782,9 @@ if (!proxy_authenticate("$fd", "subscriber")) {
    The function challenges a user agent for authentication. It combines
    the functions www_challenge() and proxy_challenge(), by calling
    internally the first one for REGISTER requests and the second one for
-   the rest of other request types.
+   the rest of other request types. In other words, it challenges for
+   authentication by sending a 401 reply for REGISTER requests and 407
+   reply for the other types of SIP requests.
 
    Meaning of the parameters the same as for function www_challenge(realm,
    flags)
@@ -791,7 +795,8 @@ if (!proxy_authenticate("$fd", "subscriber")) {
 ...
 if (!auth_check("$fd", "subscriber", "1")) {
         auth_challenge("$fd", "1");
-};
+        exit;
+}
 ...
 
 4.6.  pv_www_authenticate(realm, passwd, flags [, method])
@@ -818,9 +823,9 @@ if (!auth_check("$fd", "subscriber", "1")) {
        to the user so he can decide what username and password to use.
        Usually this is domain of the host the server is running on.
        It must not be empty string “”. In case of REGISTER requests To
-       header field domain (e.g., varibale $td) can be used (because this
+       header field domain (e.g., variable $td) can be used (because this
        header field represents a user being registered), for all other
-       messages From header field domain can be used (e.g., varibale $fd).
+       messages From header field domain can be used (e.g., variable $fd).
        The string may contain pseudo variables.
      * passwd - the password to be used for authentication. Can contain
        config variables. The Username is taken from Auth header.
@@ -843,7 +848,8 @@ if (!auth_check("$fd", "subscriber", "1")) {
 ...
 if (!pv_www_authenticate("$td", "123abc", "0")) {
         www_challenge("$td", "1");
-};
+        exit;
+}
 ...
 
 4.7.  pv_proxy_authenticate(realm, passwd, flags)
@@ -866,13 +872,14 @@ if (!pv_www_authenticate("$td", "123abc", "0")) {
 $avp(password)="xyz";
 if (!pv_proxy_authenticate("$fd", "$avp(password)", "0")) {
         proxy_challenge("$fd", "1");
-};
+        exit;
+}
 ...
 
 4.8.  pv_auth_check(realm, passwd, flags, checks)
 
    The function combines the functionalities of pv_www_authenticate and
-   pv_proxy_authenticate, first being exectuted if the SIP request is a
+   pv_proxy_authenticate, first being executed if the SIP request is a
    REGISTER, the second for the rest.
 
    Meaning of the first three parameters is the same as for
@@ -896,8 +903,9 @@ if (!pv_proxy_authenticate("$fd", "$avp(password)", "0")) {
 ...
 $avp(password)="xyz";
 if (!pv_auth_check("$fd", "$avp(password)", "0", "1")) {
-        proxy_challenge("$fd", "1");
-};
+        auth_challenge("$fd", "1");
+        exit;
+}
 ...
 
 4.9.  auth_get_www_authenticate(realm, flags, pvdest)

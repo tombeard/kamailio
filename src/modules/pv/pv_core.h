@@ -14,8 +14,8 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License 
- * along with this program; if not, write to the Free Software 
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  */
 
@@ -28,10 +28,10 @@
 int pv_get_msgid(struct sip_msg *msg, pv_param_t *param,
 		pv_value_t *res);
 
-int pv_get_udp(struct sip_msg *msg, pv_param_t *param, 
+int pv_get_udp(struct sip_msg *msg, pv_param_t *param,
 		pv_value_t *res);
 
-int pv_get_5060(struct sip_msg *msg, pv_param_t *param, 
+int pv_get_5060(struct sip_msg *msg, pv_param_t *param,
 		pv_value_t *res);
 
 int pv_get_return_code(struct sip_msg *msg, pv_param_t *param,
@@ -88,7 +88,13 @@ int pv_get_from_attr(struct sip_msg *msg, pv_param_t *param,
 int pv_get_cseq(struct sip_msg *msg, pv_param_t *param,
 		pv_value_t *res);
 
+int pv_get_cseq_body(struct sip_msg *msg, pv_param_t *param,
+		pv_value_t *res);
+
 int pv_get_msg_buf(struct sip_msg *msg, pv_param_t *param,
+		pv_value_t *res);
+
+int pv_get_msg_buf_updated(struct sip_msg *msg, pv_param_t *param,
 		pv_value_t *res);
 
 int pv_get_msg_len(struct sip_msg *msg, pv_param_t *param,
@@ -127,6 +133,9 @@ int pv_get_callid(struct sip_msg *msg, pv_param_t *param,
 int pv_get_srcip(struct sip_msg *msg, pv_param_t *param,
 		pv_value_t *res);
 
+int pv_get_srcipz(struct sip_msg *msg, pv_param_t *param,
+		pv_value_t *res);
+
 int pv_get_srcport(struct sip_msg *msg, pv_param_t *param,
 		pv_value_t *res);
 
@@ -136,10 +145,31 @@ int pv_get_srcaddr_uri(struct sip_msg *msg, pv_param_t *param,
 int pv_get_srcaddr_uri_full(struct sip_msg *msg, pv_param_t *param,
 		pv_value_t *res);
 
+int pv_get_srcaddr_socket(struct sip_msg *msg, pv_param_t *param,
+		pv_value_t *res);
+
 int pv_get_rcvip(struct sip_msg *msg, pv_param_t *param,
 		pv_value_t *res);
 
 int pv_get_rcvport(struct sip_msg *msg, pv_param_t *param,
+		pv_value_t *res);
+
+int pv_get_rcvaddr_uri(struct sip_msg *msg, pv_param_t *param,
+		pv_value_t *res);
+
+int pv_get_rcvaddr_uri_full(struct sip_msg *msg, pv_param_t *param,
+		pv_value_t *res);
+
+int pv_get_rcv_advertised_ip(struct sip_msg *msg, pv_param_t *param,
+		pv_value_t *res);
+
+int pv_get_rcv_advertised_port(struct sip_msg *msg, pv_param_t *param,
+		pv_value_t *res);
+
+int pv_get_rcvadv_uri(struct sip_msg *msg, pv_param_t *param,
+		pv_value_t *res);
+
+int pv_get_rcvadv_uri_full(struct sip_msg *msg, pv_param_t *param,
 		pv_value_t *res);
 
 int pv_get_force_sock(struct sip_msg *msg, pv_param_t *param,
@@ -164,6 +194,9 @@ int pv_get_pai(struct sip_msg *msg, pv_param_t *param,
 		pv_value_t *res);
 
 int pv_get_proto(struct sip_msg *msg, pv_param_t *param,
+		pv_value_t *res);
+
+int pv_get_protoid(struct sip_msg *msg, pv_param_t *param,
 		pv_value_t *res);
 
 int pv_get_dset(struct sip_msg *msg, pv_param_t *param,
@@ -202,6 +235,8 @@ int pv_get_branches(struct sip_msg *msg, pv_param_t *param,
 int pv_get_avp(struct sip_msg *msg,  pv_param_t *param, pv_value_t *res);
 
 int pv_get_hdr(struct sip_msg *msg,  pv_param_t *param, pv_value_t *res);
+
+int pv_get_hdrc(struct sip_msg *msg,  pv_param_t *param, pv_value_t *res);
 
 int pv_get_scriptvar(struct sip_msg *msg,  pv_param_t *param,
 		pv_value_t *res);
@@ -338,5 +373,11 @@ int pv_get_msg_attrs(sip_msg_t *msg, pv_param_t *param,
 int pv_parse_env_name(pv_spec_p sp, str *in);
 
 int pv_get_env(sip_msg_t *msg, pv_param_t *param, pv_value_t *res);
+
+int pv_parse_ksr_attrs_name(pv_spec_p sp, str *in);
+
+int pv_get_ksr_attrs(sip_msg_t *msg, pv_param_t *param,
+		pv_value_t *res);
+
 #endif
 

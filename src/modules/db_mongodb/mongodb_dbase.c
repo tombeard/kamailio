@@ -119,6 +119,15 @@ int db_mongodb_bson_filter_add(bson_t *doc, const db_key_t* _k, const db_op_t* _
 			}
 			break;
 
+		case DB1_UINT:
+			if(!bson_append_int32(&mdoc, ocmp.s, ocmp.len,
+						(int)VAL_UINT(tval))) {
+				LM_ERR("failed to append uint to bson doc %.*s %s %u [%d]\n",
+						tkey->len, tkey->s, ocmp.s, VAL_UINT(tval), idx);
+				goto error;
+			}
+			break;
+
 		case DB1_BIGINT:
 			if(!bson_append_int64(&mdoc, ocmp.s, ocmp.len,
 						VAL_BIGINT(tval ))) {
@@ -126,7 +135,16 @@ int db_mongodb_bson_filter_add(bson_t *doc, const db_key_t* _k, const db_op_t* _
 						tkey->len, tkey->s, ocmp.s, VAL_BIGINT(tval), idx);
 				goto error;
 			}
-			return -1;
+			break;
+
+		case DB1_UBIGINT:
+			if(!bson_append_int64(&mdoc, ocmp.s, ocmp.len,
+						(long long int)VAL_UBIGINT(tval ))) {
+				LM_ERR("failed to append ubigint to bson doc %.*s %s %llu [%d]\n",
+						tkey->len, tkey->s, ocmp.s, VAL_UBIGINT(tval), idx);
+				goto error;
+			}
+			break;
 
 		case DB1_DOUBLE:
 			if(!bson_append_double(&mdoc, ocmp.s, ocmp.len,
@@ -226,6 +244,15 @@ int db_mongodb_bson_add(bson_t *doc, const db_key_t _k, const db_val_t *_v, int 
 			}
 			break;
 
+		case DB1_UINT:
+			if(!bson_append_int32(doc, _k->s, _k->len,
+						(int)VAL_INT(_v))) {
+				LM_ERR("failed to append uint to bson doc %.*s = %u [%d]\n",
+						_k->len, _k->s, VAL_INT(_v), idx);
+				goto error;
+			}
+			break;
+
 		case DB1_BIGINT:
 			if(!bson_append_int64(doc, _k->s, _k->len,
 						VAL_BIGINT(_v ))) {
@@ -233,7 +260,16 @@ int db_mongodb_bson_add(bson_t *doc, const db_key_t _k, const db_val_t *_v, int 
 						_k->len, _k->s, VAL_BIGINT(_v), idx);
 				goto error;
 			}
-			return -1;
+			break;
+
+		case DB1_UBIGINT:
+			if(!bson_append_int64(doc, _k->s, _k->len,
+						(long long int)VAL_BIGINT(_v ))) {
+				LM_ERR("failed to append ubigint to bson doc %.*s = %llu [%d]\n",
+						_k->len, _k->s, VAL_UBIGINT(_v), idx);
+				goto error;
+			}
+			break;
 
 		case DB1_DOUBLE:
 			if(!bson_append_double(doc, _k->s, _k->len,
@@ -316,10 +352,14 @@ int db_mongodb_get_columns(const db1_con_t* _h, db1_res_t* _r)
 	int col;
 	db_mongodb_result_t *mgres;
 	bson_iter_t riter;
+#if MONGOC_CHECK_VERSION(1, 5, 0)
+	bson_iter_t titer;
+#endif
 	bson_iter_t citer;
 	bson_t *cdoc;
 	const char *colname;
 	bson_type_t coltype;
+	int cdocproj;
 
 	if ((!_h) || (!_r)) {
 		LM_ERR("invalid parameter\n");
@@ -338,8 +378,10 @@ int db_mongodb_get_columns(const db1_con_t* _h, db1_res_t* _r)
 			return -1;
 		}
 		cdoc = mgres->rdoc;
+		cdocproj = 0;
 	} else {
 		cdoc = mgres->colsdoc;
+		cdocproj = 1;
 	}
 	RES_COL_N(_r) = mgres->nrcols;
 	if (!RES_COL_N(_r)) {
@@ -355,9 +397,32 @@ int db_mongodb_get_columns(const db1_con_t* _h, db1_res_t* _r)
 		return -3;
 	}
 
-	if (!bson_iter_init (&citer, cdoc)) {
-		LM_ERR("failed to initialize columns iterator\n");
-		return -3;
+	if(cdocproj == 1) {
+#if MONGOC_CHECK_VERSION(1, 5, 0)
+		if (!bson_iter_init (&titer, cdoc)) {
+			LM_ERR("failed to initialize columns iterator\n");
+			return -3;
+		}
+		if(!bson_iter_find(&titer, "projection")
+				|| !BSON_ITER_HOLDS_DOCUMENT (&titer)) {
+			LM_ERR("failed to find projection field\n");
+			return -3;
+		}
+		if(!bson_iter_recurse (&titer, &citer)) {
+			LM_ERR("failed to init projection iterator\n");
+			return -3;
+		}
+#else
+		if (!bson_iter_init (&citer, cdoc)) {
+			LM_ERR("failed to initialize columns iterator\n");
+			return -3;
+		}
+#endif
+	} else {
+		if (!bson_iter_init (&citer, cdoc)) {
+			LM_ERR("failed to initialize columns iterator\n");
+			return -3;
+		}
 	}
 	if(mgres->colsdoc) {
 		if (!bson_iter_init (&riter, mgres->rdoc)) {
@@ -475,6 +540,8 @@ int db_mongodb_get_columns(const db1_con_t* _h, db1_res_t* _r)
  * \brief Convert rows from mongodb to db API representation
  * \param _h database connection
  * \param _r database result set
+ * \param _row number of rows
+ * \param _rdoc binary json structure
  * \return 0 on success, negative on failure
  */
 static int db_mongodb_convert_bson(const db1_con_t* _h, db1_res_t* _r,
@@ -486,6 +553,9 @@ static int db_mongodb_convert_bson(const db1_con_t* _h, db1_res_t* _r,
 	const char *colname;
 	bson_type_t coltype;
 	bson_iter_t riter;
+#if MONGOC_CHECK_VERSION(1, 5, 0)
+	bson_iter_t titer;
+#endif
 	bson_iter_t citer;
 	bson_iter_t *piter;
 	db_val_t* dval;
@@ -500,14 +570,34 @@ static int db_mongodb_convert_bson(const db1_con_t* _h, db1_res_t* _r,
 	}
 	if(mgres->colsdoc==NULL) {
 		cdoc = (bson_t*)_rdoc;
+		if (!bson_iter_init (&citer, cdoc)) {
+			LM_ERR("failed to initialize columns iterator\n");
+			return -3;
+		}
 	} else {
 		cdoc = (bson_t*)mgres->colsdoc;
+#if MONGOC_CHECK_VERSION(1, 5, 0)
+		if (!bson_iter_init (&titer, cdoc)) {
+			LM_ERR("failed to initialize columns iterator\n");
+			return -3;
+		}
+		if(!bson_iter_find(&titer, "projection")
+				|| !BSON_ITER_HOLDS_DOCUMENT (&titer)) {
+			LM_ERR("failed to find projection field\n");
+			return -3;
+		}
+		if(!bson_iter_recurse (&titer, &citer)) {
+			LM_ERR("failed to init projection iterator\n");
+			return -3;
+		}
+#else
+		if (!bson_iter_init (&citer, cdoc)) {
+			LM_ERR("failed to initialize columns iterator\n");
+			return -3;
+		}
+#endif
 	}
 
-	if (!bson_iter_init (&citer, cdoc)) {
-		LM_ERR("failed to initialize columns iterator\n");
-		return -3;
-	}
 	if(mgres->colsdoc) {
 		if (!bson_iter_init (&riter, _rdoc)) {
 			LM_ERR("failed to initialize result iterator\n");
@@ -578,7 +668,13 @@ static int db_mongodb_convert_bson(const db1_con_t* _h, db1_res_t* _r,
 				break;
 
 			case BSON_TYPE_UTF8:
-				VAL_STRING(dval) = (char*)bson_iter_utf8 (piter, &i32tmp);
+				{
+					char* rstring = (char*)bson_iter_utf8 (piter, &i32tmp);
+					if(db_str2val(DB1_STRING, dval, rstring, i32tmp, 1)<0) {
+						LM_ERR("failed to convert utf8 value\n");
+						return -5;
+					}
+				}
 				break;
 
 			case BSON_TYPE_OID:
@@ -719,6 +815,7 @@ static int db_mongodb_store_result(const db1_con_t* _h, db1_res_t** _r)
 	km_mongodb_con_t *mgcon;
 	db_mongodb_result_t *mgres;
 	const bson_t *itdoc;
+	bson_error_t error;
 
 	mgcon = MONGODB_CON(_h);
 	if(!_r) {
@@ -743,7 +840,11 @@ static int db_mongodb_store_result(const db1_con_t* _h, db1_res_t** _r)
 	if(!mongoc_cursor_more (mgres->cursor)
 			|| !mongoc_cursor_next (mgres->cursor, &itdoc)
 			|| !itdoc) {
-		LM_DBG("no result from mongodb\n");
+		if (mongoc_cursor_error (mgres->cursor, &error)) {
+			LM_DBG("An error occurred: %s\n", error.message);
+		} else {
+			LM_DBG("no result from mongodb\n");
+		}
 		return 0;
 	}
 	/* first document linked internally in result to get columns */
@@ -825,6 +926,9 @@ int db_mongodb_query(const db1_con_t* _h, const db_key_t* _k, const db_op_t* _op
 	km_mongodb_con_t *mgcon;
 	mongoc_client_t *client;
 	bson_t *seldoc = NULL;
+#if MONGOC_CHECK_VERSION(1, 5, 0)
+	bson_t bcols;
+#endif
 	char *cname;
 	char b1;
 	char *jstr;
@@ -904,14 +1008,31 @@ int db_mongodb_query(const db1_con_t* _h, const db_key_t* _k, const db_op_t* _op
 			LM_ERR("cannot initialize columns bson document\n");
 			goto error;
 		}
+#if MONGOC_CHECK_VERSION(1, 5, 0)
+		if(!bson_append_document_begin (mgcon->colsdoc, "projection", 10,
+					&bcols)) {
+			LM_ERR("failed to start projection of fields\n");
+			goto error;
+		}
+#endif
 		for(i = 0; i < _nc; i++) {
+#if MONGOC_CHECK_VERSION(1, 5, 0)
+			if(!bson_append_int32(&bcols, _c[i]->s, _c[i]->len, 1))
+#else
 			if(!bson_append_int32(mgcon->colsdoc, _c[i]->s, _c[i]->len, 1))
+#endif
 			{
 				LM_ERR("failed to append int to columns bson %.*s = %d [%d]\n",
 						_c[i]->len, _c[i]->s, 1, i);
 				goto error;
 			}
 		}
+#if MONGOC_CHECK_VERSION(1, 5, 0)
+		if(!bson_append_document_end (mgcon->colsdoc, &bcols)) {
+			LM_ERR("failed to end projection of fields\n");
+			goto error;
+		}
+#endif
 		if(is_printable(L_DBG)) {
 			jstr = bson_as_json (mgcon->colsdoc, NULL);
 			LM_DBG("columns filter: %s\n", jstr);
@@ -919,10 +1040,14 @@ int db_mongodb_query(const db1_con_t* _h, const db_key_t* _k, const db_op_t* _op
 		}
 		mgcon->nrcols = _nc;
 	}
+	#if MONGOC_CHECK_VERSION(1, 5, 0)
+	mgcon->cursor = mongoc_collection_find_with_opts (mgcon->collection,
+						seldoc, mgcon->colsdoc, NULL);
+	#else
 	mgcon->cursor = mongoc_collection_find (mgcon->collection,
 						MONGOC_QUERY_NONE, 0, 0, 0,
 						seldoc, mgcon->colsdoc, NULL);
-
+	#endif
 	if(!_r) {
 		goto done;
 	}

@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE table PUBLIC "-//kamailio.org//DTD DBSchema V1.1//EN" 
+<!DOCTYPE table PUBLIC "-//kamailio.org//DTD DBSchema V1.1//EN"
   "http://kamailio.org/pub/kamailio/dbschema/dtd/1.1/dbschema.dtd" [
 
 <!ENTITY % entities SYSTEM "entities.xml">
@@ -9,10 +9,16 @@
 
 <table id="presentity" xmlns:db="http://docbook.org/ns/docbook">
     <name>presentity</name>
-    <version>4</version>
+    <version>5</version>
     <type db="mysql">&MYSQL_TABLE_TYPE;</type>
     <description>
-        <db:para>Table for the presence module. More information can be found at: &KAMAILIO_MOD_DOC;presence.html
+		<db:para>
+			Table for the presence module. More information can be found at:
+			<itemizedlist>
+			<listitem>
+			<ulink url="&KAMAILIO_MOD_DOC;presence.html">&KAMAILIO_MOD_DOC;presence.html</ulink>.
+			</listitem>
+			</itemizedlist>
         </db:para>
     </description>
 
@@ -69,7 +75,7 @@
         <name>received_time</name>
         <type>int</type>
         <size>&expires_len;</size>
-        <description>Reveived time</description>
+        <description>Received time</description>
     </column>
 
     <column>
@@ -92,12 +98,26 @@
         <description>Priority of the record</description>
 	</column>
 
+    <column id="ruid">
+        <name>ruid</name>
+        <type>string</type>
+        <size>64</size>
+        <null/>
+        <description>Record internal unique id</description>
+    </column>
+
     <index>
         <name>presentity_idx</name>
         <colref linkend="username"/>
         <colref linkend="domain"/>
         <colref linkend="event"/>
         <colref linkend="etag"/>
+        <unique/>
+    </index>
+
+    <index>
+        <name>ruid_idx</name>
+        <colref linkend="ruid"/>
         <unique/>
     </index>
 

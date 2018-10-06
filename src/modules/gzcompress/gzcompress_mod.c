@@ -58,8 +58,8 @@
 MODULE_VERSION
 
 /** local functions */
-int gzc_msg_received(void *data);
-int gzc_msg_sent(void *data);
+int gzc_msg_received(sr_event_param_t *evp);
+int gzc_msg_sent(sr_event_param_t *evp);
 
 /** module parameters */
 static str _gzc_hdr_name = str_init("Content-Encoding");
@@ -81,18 +81,16 @@ static param_export_t params[]={
 
 /** module exports */
 struct module_exports exports= {
-	"gzcompress",
+	"gzcompress",    /* module name */
 	DEFAULT_DLFLAGS, /* dlopen flags */
-	0,
-	params,
-	0,          /* exported statistics */
-	0,          /* exported MI functions */
-	0,          /* exported pseudo-variables */
-	0,          /* extra processes */
-	mod_init,   /* module initialization function */
-	0,
-	0,
-	0           /* per-child init function */
+	0,               /* cmd (cfg function) exports */
+	params,          /* param exports */
+	0,               /* RPC method exports */
+	0,               /* pseudo-variables exports */
+	0,               /* response handling function */
+	mod_init,        /* module init function */
+	0,               /* per-child init function */
+	0                /* module destroy function */
 };
 
 /**
@@ -108,7 +106,7 @@ static int mod_init(void)
 			goto error;
 		}
 	}
-	
+
 	sr_event_register_cb(SREV_NET_DATA_IN, gzc_msg_received);
 	sr_event_register_cb(SREV_NET_DATA_OUT, gzc_msg_sent);
 #ifdef USE_TCP
@@ -245,7 +243,7 @@ static char _gzc_local_buffer[BUF_SIZE];
 /**
  *
  */
-int gzc_msg_received(void *data)
+int gzc_msg_received(sr_event_param_t *evp)
 {
 	sip_msg_t msg;
 	str *obuf;
@@ -256,7 +254,7 @@ int gzc_msg_received(void *data)
 	unsigned long nlen;
 	int ret;
 
-	obuf = (str*)data;
+	obuf = (str*)evp->data;
 	memset(&msg, 0, sizeof(sip_msg_t));
 	msg.buf = obuf->s;
 	msg.len = obuf->len;
@@ -333,7 +331,7 @@ done:
 /**
  *
  */
-int gzc_msg_sent(void *data)
+int gzc_msg_sent(sr_event_param_t *evp)
 {
 	sip_msg_t msg;
 	str *obuf;
@@ -343,7 +341,7 @@ int gzc_msg_sent(void *data)
 	unsigned long nlen;
 	int ret;
 
-	obuf = (str*)data;
+	obuf = (str*)evp->data;
 	memset(&msg, 0, sizeof(sip_msg_t));
 	msg.buf = obuf->s;
 	msg.len = obuf->len;

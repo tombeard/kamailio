@@ -40,6 +40,7 @@
 #include "../../core/rpc_lookup.h"
 #include "../../core/cfg/cfg.h"
 #include "../../core/dprint.h"
+#include "../../core/kemi.h"
 #include "tls_init.h"
 #include "tls_server.h"
 #include "tls_domain.h"
@@ -77,11 +78,12 @@ static int mod_init(void);
 static int mod_child(int rank);
 static void destroy(void);
 
-static int is_peer_verified(struct sip_msg* msg, char* foo, char* foo2);
+static int w_is_peer_verified(struct sip_msg* msg, char* p1, char* p2);
 
 MODULE_VERSION
 
 
+extern str sr_tls_event_callback;
 str sr_tls_xavp_cfg = {0, 0};
 /*
  * Default settings when modparams are used
@@ -101,6 +103,7 @@ static tls_domain_t mod_params = {
 	TLS_USE_TLSv1,    /* TLS method */
 	STR_STATIC_INIT(TLS_CRL_FILE), /* Certificate revocation list */
 	{0, 0},           /* Server name (SNI) */
+	0,                /* Server name (SNI) mode */
 	{0, 0},           /* Server id */
 	0                 /* next */
 };
@@ -124,11 +127,29 @@ tls_domain_t srv_defaults = {
 	TLS_USE_TLSv1,    /* TLS method */
 	STR_STATIC_INIT(TLS_CRL_FILE), /* Certificate revocation list */
 	{0, 0},           /* Server name (SNI) */
+	0,                /* Server name (SNI) mode */
 	{0, 0},           /* Server id */
 	0                 /* next */
 };
 
 
+#ifndef OPENSSL_NO_ENGINE
+
+typedef struct tls_engine {
+        str engine;
+        str engine_config;
+        str engine_algorithms;
+} tls_engine_t;
+#include <openssl/conf.h>
+#include <openssl/engine.h>
+
+static ENGINE *ksr_tls_engine;
+static tls_engine_t tls_engine_settings = {
+	STR_STATIC_INIT("NONE"),
+	STR_STATIC_INIT("NONE"),
+	STR_STATIC_INIT("ALL"),
+};
+#endif /* OPENSSL_NO_ENGINE */
 /*
  * Default settings for client domains when using external config file
  */
@@ -147,6 +168,7 @@ tls_domain_t cli_defaults = {
 	TLS_USE_TLSv1,    /* TLS method */
 	{0, 0}, /* Certificate revocation list */
 	{0, 0},           /* Server name (SNI) */
+	0,                /* Server name (SNI) mode */
 	{0, 0},           /* Server id */
 	0                 /* next */
 };
@@ -166,7 +188,7 @@ int sr_tls_renegotiation = 0;
  * Exported functions
  */
 static cmd_export_t cmds[] = {
-	{"is_peer_verified", (cmd_function)is_peer_verified,   0, 0, 0,
+	{"is_peer_verified", (cmd_function)w_is_peer_verified,   0, 0, 0,
 			REQUEST_ROUTE},
 	{0,0,0,0,0,0}
 };
@@ -187,6 +209,11 @@ static param_export_t params[] = {
 	{"crl",                 PARAM_STR,    &default_tls_cfg.crl          },
 	{"cipher_list",         PARAM_STR,    &default_tls_cfg.cipher_list  },
 	{"connection_timeout",  PARAM_INT,    &default_tls_cfg.con_lifetime },
+#ifndef OPENSSL_NO_ENGINE
+	{"engine",              PARAM_STR,    &tls_engine_settings.engine  },
+	{"engine_config",       PARAM_STR,    &tls_engine_settings.engine_config },
+	{"engine_algorithms",   PARAM_STR,    &tls_engine_settings.engine_algorithms },
+#endif /* OPENSSL_NO_ENGINE */
 	{"tls_log",             PARAM_INT,    &default_tls_cfg.log          },
 	{"tls_debug",           PARAM_INT,    &default_tls_cfg.debug        },
 	{"session_cache",       PARAM_INT,    &default_tls_cfg.session_cache},
@@ -208,6 +235,7 @@ static param_export_t params[] = {
 	{"low_mem_threshold2",  PARAM_INT,    &default_tls_cfg.low_mem_threshold2},
 	{"renegotiation",       PARAM_INT,    &sr_tls_renegotiation},
 	{"xavp_cfg",            PARAM_STR,    &sr_tls_xavp_cfg},
+	{"event_callback",      PARAM_STR,    &sr_tls_event_callback},
 	{0, 0, 0}
 };
 
@@ -216,18 +244,16 @@ static param_export_t params[] = {
  * Module interface
  */
 struct module_exports exports = {
-	"tls",
+	"tls",           /* module name */
 	DEFAULT_DLFLAGS, /* dlopen flags */
-	cmds,        /* Exported functions */
-	params,      /* Exported parameters */
-	0,           /* exported statistics */
-	0,           /* exported MI functions */
-	tls_pv,      /* exported pseudo-variables */
-	0,           /* extra processes */
-	mod_init,    /* module initialization function */
-	0,           /* response function */
-	destroy,     /* destroy function */
-	mod_child    /* child initialization function */
+	cmds,            /* exported functions */
+	params,          /* exported parameters */
+	0,               /* exported rpc command */
+	tls_pv,          /* exported pseudo-variables */
+	0,               /* response handling function */
+	mod_init,        /* module init function */
+	mod_child,       /* child initi function */
+	destroy          /* destroy function */
 };
 
 
@@ -261,49 +287,30 @@ static tls_domains_cfg_t* tls_use_modparams(void)
 }
 #endif
 
-int mod_register(char *path, int *dlflags, void *p1, void *p2)
-{
-	if (tls_disable) {
-		LOG(L_WARN, "tls support is disabled "
-				"(set enable_tls=1 in the config to enable it)\n");
-		return 0;
-	}
-
-	/* shm is used, be sure it is initialized */
-	if(!shm_initialized() && init_shm()<0)
-		return -1;
-
-	if(tls_pre_init()<0)
-		return -1;
-
-	register_tls_hooks(&tls_h);
-
-	return 0;
-}
 
 static int mod_init(void)
 {
 	int method;
 
 	if (tls_disable){
-		LOG(L_WARN, "tls support is disabled "
+		LM_WARN("tls support is disabled "
 				"(set enable_tls=1 in the config to enable it)\n");
 		return 0;
 	}
 	if (fix_tls_cfg(&default_tls_cfg) < 0 ) {
-		ERR("initial tls configuration fixup failed\n");
+		LM_ERR("initial tls configuration fixup failed\n");
 		return -1;
 	}
 	/* declare configuration */
 	if (cfg_declare("tls", tls_cfg_def, &default_tls_cfg,
 							cfg_sizeof(tls), (void **)&tls_cfg)) {
-		ERR("failed to register the configuration\n");
+		LM_ERR("failed to register the configuration\n");
 		return -1;
 	}
 	/* Convert tls_method parameter to integer */
 	method = tls_parse_method(&cfg_get(tls, tls_cfg, method));
 	if (method < 0) {
-		ERR("Invalid tls_method parameter value\n");
+		LM_ERR("Invalid tls_method parameter value\n");
 		return -1;
 	}
 	/* fill mod_params */
@@ -321,7 +328,7 @@ static int mod_init(void)
 	tls_domains_cfg =
 			(tls_domains_cfg_t**)shm_malloc(sizeof(tls_domains_cfg_t*));
 	if (!tls_domains_cfg) {
-		ERR("Not enough shared memory left\n");
+		LM_ERR("Not enough shared memory left\n");
 		goto error;
 	}
 	*tls_domains_cfg = NULL;
@@ -329,7 +336,7 @@ static int mod_init(void)
 	register_select_table(tls_sel);
 	/* register the rpc interface */
 	if (rpc_register_array(tls_rpc)!=0) {
-		LOG(L_ERR, "failed to register RPC commands\n");
+		LM_ERR("failed to register RPC commands\n");
 		goto error;
 	}
 
@@ -337,7 +344,7 @@ static int mod_init(void)
 
 	tls_domains_cfg_lock = lock_alloc();
 	if (tls_domains_cfg_lock == 0) {
-		ERR("Unable to create TLS configuration lock\n");
+		LM_ERR("Unable to create TLS configuration lock\n");
 		goto error;
 	}
 	if (lock_init(tls_domains_cfg_lock) == 0) {
@@ -346,7 +353,7 @@ static int mod_init(void)
 		goto error;
 	}
 	if (tls_ct_wq_init() < 0) {
-		ERR("Unable to initialize TLS buffering\n");
+		LM_ERR("Unable to initialize TLS buffering\n");
 		goto error;
 	}
 	if (cfg_get(tls, tls_cfg, config_file).s) {
@@ -367,7 +374,9 @@ static int mod_init(void)
 #ifndef OPENSSL_NO_DH
 	LM_INFO("With Diffie Hellman\n");
 #endif
-	tls_lookup_event_routes();
+	if(sr_tls_event_callback.s==NULL || sr_tls_event_callback.len<=0) {
+		tls_lookup_event_routes();
+	}
 	return 0;
 error:
 	destroy_tls_h();
@@ -375,10 +384,15 @@ error:
 }
 
 
+#ifndef OPENSSL_NO_ENGINE
+static int tls_engine_init();
+int tls_fix_engine_keys(tls_domains_cfg_t*, tls_domain_t*, tls_domain_t*);
+#endif
 static int mod_child(int rank)
 {
 	if (tls_disable || (tls_domains_cfg==0))
 		return 0;
+
 	/* fix tls config only from the main proc/PROC_INIT., when we know
 	 * the exact process number and before any other process starts*/
 	if (rank == PROC_INIT){
@@ -392,6 +406,21 @@ static int mod_child(int rank)
 				return -1;
 		}
 	}
+#ifndef OPENSSL_NO_ENGINE
+	/*
+	 * after the child is fork()ed we go through the TLS domains
+	 * and fix up private keys from engine
+	 */
+	if (!strncmp(tls_engine_settings.engine.s, "NONE", 4)) return 0;
+
+	if (rank > 0) {
+		if (tls_engine_init() < 0)
+			return -1;
+		if (tls_fix_engine_keys(*tls_domains_cfg, &srv_defaults, &cli_defaults)<0)
+			return -1;
+		LM_INFO("OpenSSL Engine loaded private keys in child: %d\n", rank);
+	}
+#endif
 	return 0;
 }
 
@@ -403,30 +432,30 @@ static void destroy(void)
 }
 
 
-static int is_peer_verified(struct sip_msg* msg, char* foo, char* foo2)
+static int ki_is_peer_verified(sip_msg_t* msg)
 {
 	struct tcp_connection *c;
 	SSL *ssl;
 	long ssl_verify;
 	X509 *x509_cert;
 
-	DBG("started...\n");
+	LM_DBG("started...\n");
 	if (msg->rcv.proto != PROTO_TLS) {
-		ERR("proto != TLS --> peer can't be verified, return -1\n");
+		LM_ERR("proto != TLS --> peer can't be verified, return -1\n");
 		return -1;
 	}
 
-	DBG("trying to find TCP connection of received message...\n");
+	LM_DBG("trying to find TCP connection of received message...\n");
 
 	c = tcpconn_get(msg->rcv.proto_reserved1, 0, 0, 0,
 					cfg_get(tls, tls_cfg, con_lifetime));
 	if (!c) {
-		ERR("connection no longer exits\n");
+		LM_ERR("connection no longer exits\n");
 		return -1;
 	}
 
 	if(c->type != PROTO_TLS) {
-		ERR("Connection found but is not TLS\n");
+		LM_ERR("Connection found but is not TLS\n");
 		tcpconn_put(c);
 		return -1;
 	}
@@ -466,3 +495,98 @@ static int is_peer_verified(struct sip_msg* msg, char* foo, char* foo2)
 		"...done\n");
 	return 1;
 }
+
+static int w_is_peer_verified(struct sip_msg* msg, char* foo, char* foo2)
+{
+	return ki_is_peer_verified(msg);
+}
+
+/**
+ *
+ */
+/* clang-format off */
+static sr_kemi_t sr_kemi_tls_exports[] = {
+	{ str_init("tls"), str_init("is_peer_verified"),
+		SR_KEMIP_INT, ki_is_peer_verified,
+		{ SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE,
+			SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE }
+	},
+
+	{ {0, 0}, {0, 0}, 0, NULL, { 0, 0, 0, 0, 0, 0 } }
+};
+/* clang-format on */
+
+/**
+ *
+ */
+int mod_register(char *path, int *dlflags, void *p1, void *p2)
+{
+	if (tls_disable) {
+		LM_WARN("tls support is disabled "
+				"(set enable_tls=1 in the config to enable it)\n");
+		return 0;
+	}
+
+	/* shm is used, be sure it is initialized */
+	if(!shm_initialized() && init_shm()<0)
+		return -1;
+
+	if(tls_pre_init()<0)
+		return -1;
+
+	register_tls_hooks(&tls_h);
+	sr_kemi_modules_add(sr_kemi_tls_exports);
+
+	return 0;
+}
+
+
+
+#ifndef OPENSSL_NO_ENGINE
+/*
+ * initialize OpenSSL engine in child process
+ * PKCS#11 libraries are not guaranteed to be fork() safe
+ *
+ */
+static int tls_engine_init()
+{
+	LM_DBG("With OpenSSL engine support\n");
+	if (strncmp(tls_engine_settings.engine.s, "NONE", 4)) {
+		int err = 0;
+		ENGINE_load_builtin_engines();
+		OPENSSL_load_builtin_modules();
+		if (strncmp(tls_engine_settings.engine_config.s, "NONE", 4)) {
+			err = CONF_modules_load_file(tls_engine_settings.engine_config.s, "kamailio", 0);
+			if (!err) {
+				LM_ERR("OpenSSL failed to load ENGINE configuration file: %*s\n", tls_engine_settings.engine_config.len, tls_engine_settings.engine_config.s);
+				goto error;
+			}
+		}
+		ksr_tls_engine = ENGINE_by_id(tls_engine_settings.engine.s);
+		if (!ksr_tls_engine) {
+			LM_ERR("OpenSSL failed to obtain ENGINE: %*s\n", tls_engine_settings.engine_config.len, tls_engine_settings.engine_config.s);
+			goto error;
+		}
+		err = ENGINE_init(ksr_tls_engine);
+		if (!err) {
+			LM_ERR("OpenSSL ENGINE_init() failed\n");
+			goto error;
+		}
+		if (strncmp(tls_engine_settings.engine_algorithms.s, "NONE", 4)) {
+			err = ENGINE_set_default_string(ksr_tls_engine, tls_engine_settings.engine_algorithms.s);
+			if (!err) {
+				LM_ERR("OpenSSL ENGINE could not set algorithms\n");
+				goto error;
+			}
+		}
+		LM_INFO("OpenSSL engine %*s initialized\n", tls_engine_settings.engine.len, tls_engine_settings.engine.s);
+	}
+	return 0;
+error:
+	return -1;
+}
+
+EVP_PKEY *tls_engine_private_key(const char* key_id) {
+	return ENGINE_load_private_key(ksr_tls_engine, key_id, NULL, NULL);
+}
+#endif

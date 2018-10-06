@@ -150,6 +150,7 @@ int pres_process_body(publ_info_t* publ, str** fin_body, int ver, str** tuple_pa
 				LM_ERR("No more memory\n");
 				goto error;
 			}
+			alloc_tuple = 1;
 			tuple->s= (char*)pkg_malloc(tuple_id_len* sizeof(char));
 			if(tuple->s== NULL)
 			{
@@ -160,7 +161,6 @@ int pres_process_body(publ_info_t* publ, str** fin_body, int ver, str** tuple_pa
 			tuple->len= tuple_id_len;
 
 			*tuple_param= tuple;
-			alloc_tuple= 1;
 
 			LM_DBG("allocated tuple_id\n\n");
 		}
@@ -183,6 +183,10 @@ int pres_process_body(publ_info_t* publ, str** fin_body, int ver, str** tuple_pa
 	{
 		if(tuple== NULL)
 		{
+			if(strlen(tuple_id)>=50) {
+				LM_ERR("tuple id is too long: %s\n", tuple_id);
+				goto error;
+			}
 			strcpy(buf, tuple_id);
 			xmlFree(tuple_id);
 			tuple_id= buf;
@@ -252,12 +256,10 @@ error:
 		xmlFreeDoc(doc);
 	if(body)
 		pkg_free(body);
-	if(tuple && alloc_tuple)
-	{
+	if(tuple && alloc_tuple) {
 		if(tuple->s)
 			pkg_free(tuple->s);
 		pkg_free(tuple);
-		tuple= NULL;
 	}
 	return -1;
 

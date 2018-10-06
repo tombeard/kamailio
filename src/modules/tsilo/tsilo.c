@@ -32,6 +32,7 @@
 #include "../../modules/registrar/api.h"
 #include "../../core/dset.h"
 #include "../../core/rpc_lookup.h"
+#include "../../core/kemi.h"
 
 #include "ts_hash.h"
 #include "ts_handlers.h"
@@ -104,22 +105,16 @@ stat_export_t mod_stats[] = {
 
 /** module exports */
 struct module_exports exports = {
-	"tsilo",
-	DEFAULT_DLFLAGS,/* dlopen flags */
-	cmds,        	/* Exported functions */
-	params,      	/* Exported parameters */
-#ifdef STATISTICS
-	mod_stats,   	/* exported statistics */
-#else
-	0,
-#endif
-	0,           	/* exported MI functions */
-	0,     		/* exported pseudo-variables */
-	0,           	/* extra processes */
-	mod_init,    	/* module initialization function */
-	0,
-	destroy, 	/* destroy function */
-	0,  		/* Per-child init function */
+	"tsilo",         /* module name */
+	DEFAULT_DLFLAGS, /* dlopen flags */
+	cmds,            /* exported functions */
+	params,          /* exported parameters */
+	0,               /* exported RPC methods */
+	0,               /* exported pseudo-variables */
+	0,               /* response handling function */
+	mod_init,        /* module initialization function */
+	0,               /* per-child init function */
+	destroy          /* destroy function */
 };
 
 /**
@@ -245,21 +240,54 @@ static int fixup_ts_append(void** param, int param_no)
 
 	return 0;
 }
+
 /**
  *
  */
 static int w_ts_append(struct sip_msg* _msg, char *_table, char *_ruri)
 {
-	str ruri = {0};
+	str tmp  = STR_NULL;
+	str ruri = STR_NULL;
+	int rc;
 
-	if(_ruri==NULL || (fixup_get_svalue(_msg, (gparam_p)_ruri, &ruri)!=0 || ruri.len<=0)) {
+	if(_ruri==NULL || (fixup_get_svalue(_msg, (gparam_p)_ruri, &tmp)!=0 || tmp.len<=0)) {
 		LM_ERR("invalid ruri parameter\n");
 		return -1;
 	}
-	if(ts_check_uri(&ruri)<0)
+	if(ts_check_uri(&tmp)<0)
 		return -1;
-	return ts_append(_msg, &ruri, _table);
+
+	if (pkg_str_dup(&ruri, &tmp) < 0)
+		return -1;
+
+	rc = ts_append(_msg, &ruri, _table);
+
+	pkg_free(ruri.s);
+
+	return rc;
 }
+
+/**
+ *
+ */
+static int ki_ts_append(sip_msg_t* _msg, str *_table, str *_ruri)
+{
+	str ruri = STR_NULL;
+	int rc;
+
+	if(ts_check_uri(_ruri)<0)
+		return -1;
+
+	if (pkg_str_dup(&ruri, _ruri) < 0)
+		return -1;
+
+	rc = ts_append(_msg, &ruri, _table->s);
+
+	pkg_free(ruri.s);
+
+	return rc;
+}
+
 /**
  *
  */
@@ -279,6 +307,15 @@ static int w_ts_append_to(struct sip_msg* msg, char *idx, char *lbl, char *table
 	}
 
 	return ts_append_to(msg, tindex, tlabel, table, 0);
+}
+
+/**
+ *
+ */
+static int ki_ts_append_to(sip_msg_t* _msg, int tindex, int tlabel, str *_table)
+{
+	return ts_append_to(_msg, (unsigned int)tindex, (unsigned int)tlabel,
+			_table->s, 0);
 }
 
 /**
@@ -313,11 +350,28 @@ static int w_ts_append_to2(struct sip_msg* msg, char *idx, char *lbl, char *tabl
 /**
  *
  */
+static int ki_ts_append_to_uri(sip_msg_t* _msg, int tindex, int tlabel,
+		str *_table, str *_uri)
+{
+	return ts_append_to(_msg, (unsigned int)tindex, (unsigned int)tlabel,
+			_table->s, _uri);
+}
+
+/**
+ *
+ */
 static int w_ts_store(struct sip_msg* msg, char *p1, char *p2)
 {
 	return ts_store(msg, 0);
 }
 
+/**
+ *
+ */
+static int ki_ts_store(sip_msg_t* msg)
+{
+	return ts_store(msg, 0);
+}
 
 /**
  *
@@ -331,4 +385,45 @@ static int w_ts_store1(struct sip_msg* msg, char *_ruri, char *p2)
 		return -1;
 	}
 	return ts_store(msg, &suri);
+}
+
+/**
+ *
+ */
+/* clang-format off */
+static sr_kemi_t sr_kemi_tsilo_exports[] = {
+	{ str_init("tsilo"), str_init("ts_store"),
+		SR_KEMIP_INT, ki_ts_store,
+		{ SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE,
+			SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE }
+	},
+	{ str_init("tsilo"), str_init("ts_store_uri"),
+		SR_KEMIP_INT, ts_store,
+		{ SR_KEMIP_STR, SR_KEMIP_NONE, SR_KEMIP_NONE,
+			SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE }
+	},
+	{ str_init("tsilo"), str_init("ts_append"),
+		SR_KEMIP_INT, ki_ts_append,
+		{ SR_KEMIP_STR, SR_KEMIP_STR, SR_KEMIP_NONE,
+			SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE }
+	},
+	{ str_init("tsilo"), str_init("ts_append_to"),
+		SR_KEMIP_INT, ki_ts_append_to,
+		{ SR_KEMIP_INT, SR_KEMIP_INT, SR_KEMIP_STR,
+			SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE }
+	},
+	{ str_init("tsilo"), str_init("ts_append_to_uri"),
+		SR_KEMIP_INT, ki_ts_append_to_uri,
+		{ SR_KEMIP_INT, SR_KEMIP_INT, SR_KEMIP_STR,
+			SR_KEMIP_STR, SR_KEMIP_NONE, SR_KEMIP_NONE }
+	},
+
+	{ {0, 0}, {0, 0}, 0, NULL, { 0, 0, 0, 0, 0, 0 } }
+};
+/* clang-format on */
+
+int mod_register(char *path, int *dlflags, void *p1, void *p2)
+{
+	sr_kemi_modules_add(sr_kemi_tsilo_exports);
+	return 0;
 }

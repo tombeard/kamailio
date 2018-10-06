@@ -158,7 +158,8 @@ int probe_max_receive_buffer( int udp_sock )
 			if (phase==1) break;
 			else { phase=1; optval >>=1; continue; }
 		}
-		LM_DBG("trying SO_RCVBUF: %d\n", optval );
+		if(ksr_verbose_startup)
+			LM_DBG("trying SO_RCVBUF: %d\n", optval);
 		if (setsockopt( udp_sock, SOL_SOCKET, SO_RCVBUF,
 			(void*)&optval, sizeof(optval)) ==-1){
 			/* Solaris returns -1 if asked size too big; Linux ignores */
@@ -180,8 +181,9 @@ int probe_max_receive_buffer( int udp_sock )
 			LM_ERR("getsockopt: %s\n", strerror(errno));
 			return -1;
 		} else {
-			LM_DBG("setting SO_RCVBUF; set=%d,verify=%d\n",
-				optval, voptval);
+			if(ksr_verbose_startup)
+				LM_DBG("setting SO_RCVBUF; set=%d,verify=%d\n",
+						optval, voptval);
 			if (voptval<optval) {
 				LM_DBG("setting SO_RCVBUF has no effect\n");
 				/* if setting buffer size failed and still in the aggressive
@@ -339,6 +341,16 @@ int udp_init(struct socket_info* sock_info)
 	}
 #endif
 
+#if defined(IP_FREEBIND)
+	/* allow bind to non local address.
+	 * useful when daemon started before network initialized */
+	optval = 1;
+	if (_sr_ip_free_bind && setsockopt(sock_info->socket, IPPROTO_IP,
+				IP_FREEBIND, (void*)&optval, sizeof(optval)) ==-1) {
+		LM_WARN("setsockopt freebind failed: %s\n", strerror(errno));
+		/* continue since this is not critical */
+	}
+#endif
 #ifdef USE_MCAST
 	if ((sock_info->flags & SI_IS_MCAST)
 	    && (setup_mcast_rcvr(sock_info->socket, addr, sock_info->mcast.s)<0)){
@@ -412,6 +424,13 @@ int udp_rcv_loop()
 	union sockaddr_union* from;
 	unsigned int fromlen;
 	struct receive_info ri;
+	sr_event_param_t evp = {0};
+#define UDP_RCV_PRINTBUF_SIZE 512
+#define UDP_RCV_PRINT_LEN 100
+	char printbuf[UDP_RCV_PRINTBUF_SIZE];
+	int i;
+	int j;
+	int l;
 
 
 	from=(union sockaddr_union*) pkg_malloc(sizeof(union sockaddr_union));
@@ -453,6 +472,25 @@ int udp_rcv_loop()
 		/* we must 0-term the messages, receive_msg expects it */
 		buf[len]=0; /* no need to save the previous char */
 
+		if(is_printable(L_DBG) && len>10) {
+			j = 0;
+			for(i=0; i<len && i<UDP_RCV_PRINT_LEN
+						&& j+8<UDP_RCV_PRINTBUF_SIZE; i++) {
+				if(isprint(buf[i])) {
+					printbuf[j++] = buf[i];
+				} else {
+					l = snprintf(printbuf+j, 6, " %02X ", (unsigned char)buf[i]);
+					if(l<0 || l>=6) {
+						LM_ERR("print buffer building failed (%d/%d/%d)\n",
+								l, j, i);
+						continue; /* skip it */
+					}
+					j += l;
+				}
+			}
+			LM_DBG("received on udp socket: (%d/%d/%d) [[%.*s]]\n",
+					j, i, len, j, printbuf);
+		}
 		ri.src_su=*from;
 		su2ip_addr(&ri.src_ip, from);
 		ri.src_port=su_getport(from);
@@ -463,7 +501,8 @@ int udp_rcv_loop()
 			sredp[0] = (void*)buf;
 			sredp[1] = (void*)(&len);
 			sredp[2] = (void*)(&ri);
-			if(sr_event_exec(SREV_NET_DGRAM_IN, (void*)sredp)<0) {
+			evp.data = (void*)sredp;
+			if(sr_event_exec(SREV_NET_DGRAM_IN, &evp)<0) {
 				/* data handled by callback - continue to next packet */
 				continue;
 			}
@@ -476,19 +515,6 @@ int udp_rcv_loop()
 				continue;
 			}
 		}
-/* historically, zero-terminated packets indicated a bug in clients
- * that calculated wrongly packet length and included string-terminating
- * zero; today clients exist with legitimate binary payloads and we
- * shall not check for zero-terminated payloads
- */
-#ifdef TRASH_ZEROTERMINATED_PACKETS
-		if (buf[len-1]==0) {
-			tmp=ip_addr2a(&ri.src_ip);
-			LM_WARN("upstream bug - 0-terminated packet from %s %d\n",
-					tmp, htons(ri.src_port));
-			len--;
-		}
-#endif
 #endif
 #ifdef DBG_MSG_QA
 		if (!dbg_msg_qa(buf, len)) {
@@ -565,7 +591,8 @@ again:
 #endif
 		if (unlikely(n==-1)){
 			su2ip_addr(&ip, &dst->to);
-			LM_ERR("sendto(sock,%p,%u,0,%s:%d,%d): %s(%d)\n",
+			LM_ERR("sendto(sock, buf: %p, len: %u, 0, dst: (%s:%d), tolen: %d)"
+					" - err: %s (%d)\n",
 					buf,len, ip_addr2a(&ip),
 					su_getport(&dst->to), tolen, strerror(errno), errno);
 			if (errno==EINTR) goto again;

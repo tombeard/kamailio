@@ -13,8 +13,8 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License 
- * along with this program; if not, write to the Free Software 
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  *
  *
@@ -47,7 +47,7 @@
 struct tm_binds {
 	register_tmcb_f  register_tmcb;
 	cmd_function     t_relay_to_udp; /* WARNING: failure_route unsafe */
-	cmd_function     t_relay_to_tcp; /* WARNING: failure_route unsafe */ 
+	cmd_function     t_relay_to_tcp; /* WARNING: failure_route unsafe */
 	cmd_function     t_relay;        /* WARNING: failure_route unsafe */
 	treplicate_uri_f t_replicate;    /* WARNING: failure_route unsafe */
 	tnewtran_f       t_newtran;
@@ -103,6 +103,7 @@ struct tm_binds {
 #endif
 	t_suspend_f	t_suspend;
 	t_continue_f	t_continue;
+	t_continue_cb_f	t_continue_cb;
 	t_cancel_suspend_f	t_cancel_suspend;
 	tget_reply_totag_f t_get_reply_totag;
 	tget_picked_f t_get_picked_branch;
@@ -143,12 +144,12 @@ static inline int load_tm_api(struct tm_binds* tmb)
 
 	/* import the TM auto-loading function */
 	load_tm = (load_tm_f)find_export("load_tm", NO_SCRIPT, 0);
-	
+
 	if (load_tm == NULL) {
-		LOG(L_WARN, "Cannot import load_tm function from tm module\n");
+		LM_WARN("Cannot import load_tm function from tm module\n");
 		return -1;
 	}
-	
+
 	/* let the auto-loading function load all TM stuff */
 	if (load_tm(tmb) == -1) {
 		return -1;
@@ -191,13 +192,13 @@ static inline int tm_load_xapi(tm_xapi_t *xtmb)
 	load_xtm = (load_xtm_f)find_export("load_xtm", NO_SCRIPT, 0);
 
 	if (load_xtm == NULL) {
-		LOG(L_WARN, "Cannot import load_xtm function from tm module\n");
+		LM_WARN("Cannot import load_xtm function from tm module\n");
 		return -1;
 	}
 
 	/* let the auto-loading function load all extra TM stuff */
 	if (load_xtm(xtmb) < 0) {
-		LOG(L_WARN, "Cannot bind xapi from tm module\n");
+		LM_WARN("Cannot bind xapi from tm module\n");
 		return -1;
 	}
 	return 0;

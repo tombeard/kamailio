@@ -62,6 +62,10 @@ str flat_pid = STR_NULL;
 /** Enable/disable flushing after eaach write. */
 int flat_flush = 1;
 
+/** Escape delimiter using
+ * ""%" HEX HEX" mechanism for escaping from RFC 2396
+ *  */
+int encode_delimiter = 1;
 
 /** Row delimiter.
  * The character in this variable will be used to delimit rows.
@@ -104,18 +108,19 @@ time_t flat_local_timestamp;
 
 /* Flatstore database module interface */
 static cmd_export_t cmds[] = {
-	{"db_uri", (cmd_function)flat_uri, 0, 0, 0},
-	{"db_con", (cmd_function)flat_con, 0, 0, 0},
-	{"db_cmd", (cmd_function)flat_cmd, 0, 0, 0},
-	{"db_put", (cmd_function)flat_put, 0, 0, 0},
-	{"db_bind_api", (cmd_function)db_flat_bind_api,      0, 0, 0},
-	{0, 0, 0, 0, 0}
+	{"db_uri", (cmd_function)flat_uri, 0, 0, 0, 0},
+	{"db_con", (cmd_function)flat_con, 0, 0, 0, 0},
+	{"db_cmd", (cmd_function)flat_cmd, 0, 0, 0, 0},
+	{"db_put", (cmd_function)flat_put, 0, 0, 0, 0},
+	{"db_bind_api", (cmd_function)db_flat_bind_api,      0, 0, 0, 0},
+	{0, 0, 0, 0, 0, 0}
 };
 
 
 /* Exported parameters */
 static param_export_t params[] = {
 	{"flush",            PARAM_INT, &flat_flush},
+	{"encode_delimiter", PARAM_INT, &encode_delimiter},
 	{"field_delimiter",  PARAM_STR, &flat_delimiter},
 	{"record_delimiter", PARAM_STR, &flat_record_delimiter},
 	{"escape_char",      PARAM_STR, &flat_escape},
@@ -125,15 +130,16 @@ static param_export_t params[] = {
 
 
 struct module_exports exports = {
-	"db_flatstore",
-	cmds,
-	flat_rpc,    /* RPC methods */
-	params,      /*  module parameters */
-	mod_init,    /* module initialization function */
-	0,           /* response function*/
-	mod_destroy, /* destroy function */
-	0,           /* oncancel function */
-	child_init   /* per-child init function */
+	"db_flatstore",		/* module name */
+	DEFAULT_DLFLAGS,	/* dlopen flags */
+	cmds,				/* exported functions */
+	params,				/* exported parameters */
+	flat_rpc,			/* RPC method exports */
+	0,					/* exported pseudo-variables */
+	0,					/* response handling function */
+	mod_init,			/* module initialization function */
+	child_init,			/* per-child init function */
+	mod_destroy			/* module destroy function */
 };
 
 

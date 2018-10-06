@@ -103,11 +103,19 @@ int get_cfg_crt_line(void)
 }
 
 /* return name of config for current executed action */
-char *get_cfg_crt_name(void)
+char *get_cfg_crt_file_name(void)
 {
 	if(_cfg_crt_action==0)
 		return 0;
 	return _cfg_crt_action->cfile;
+}
+
+/* return name of routing block for current executed action */
+char *get_cfg_crt_route_name(void)
+{
+	if(_cfg_crt_action==0)
+		return 0;
+	return _cfg_crt_action->rname;
 }
 
 /* handle the exit code of a module function call.
@@ -291,7 +299,7 @@ int do_action(struct run_act_ctx* h, struct action* a, struct sip_msg* msg)
 	struct dest_info dst;
 	char* tmp;
 	char *new_uri, *end, *crt;
-	sr31_cmd_export_t* cmd;
+	ksr_cmd_export_t* cmd;
 	int len;
 	int user;
 	struct sip_uri uri, next_hop;
@@ -310,6 +318,8 @@ int do_action(struct run_act_ctx* h, struct action* a, struct sip_msg* msg)
 	struct rval_cache c1;
 	str s;
 	void *srevp[2];
+	sr_event_param_t evp = {0};
+
 	/* temporary storage space for a struct action.val[] working copy
 	 (needed to transform RVE intro STRING before calling module
 	   functions). [0] is not used (corresp. to the module export pointer),
@@ -330,7 +340,8 @@ int do_action(struct run_act_ctx* h, struct action* a, struct sip_msg* msg)
 	{
 		srevp[0] = (void*)a;
 		srevp[1] = (void*)msg;
-		sr_event_exec(SREV_CFG_RUN_ACTION, (void*)srevp);
+		evp.data = (void*)srevp;
+		sr_event_exec(SREV_CFG_RUN_ACTION, &evp);
 	}
 
 	ret=E_BUG;
@@ -342,7 +353,9 @@ int do_action(struct run_act_ctx* h, struct action* a, struct sip_msg* msg)
 						break;
 					case RVE_ST:
 						rve=(struct rval_expr*)a->val[0].u.data;
-						rval_expr_eval_int(h, msg, &ret, rve);
+						if(rval_expr_eval_int(h, msg, &ret, rve)<0) {
+							LM_WARN("failed to eval int expression\n");
+						}
 						break;
 					case RETCODE_ST:
 						ret=h->last_retcode;
@@ -1514,7 +1527,6 @@ int run_actions(struct run_act_ctx* h, struct action* a, struct sip_msg* msg)
 {
 	struct action* t;
 	int ret;
-	struct sr_module *mod;
 	unsigned int ms = 0;
 
 	ret=E_UNSPEC;
@@ -1561,7 +1573,7 @@ int run_actions(struct run_act_ctx* h, struct action* a, struct sip_msg* msg)
 						"alert - action [%s (%d)]"
 						" cfg [%s:%d] took too long [%u ms]\n",
 						is_mod_func(t) ?
-							((cmd_export_common_t*)(t->val[0].u.data))->name
+							((cmd_export_t*)(t->val[0].u.data))->name
 							: "corefunc",
 						t->type, (t->cfile)?t->cfile:"", t->cline, ms);
 			}
@@ -1583,13 +1595,6 @@ int run_actions(struct run_act_ctx* h, struct action* a, struct sip_msg* msg)
 
 	h->rec_lev--;
 end:
-	/* process module onbreak handlers if present */
-	if (unlikely(h->rec_lev==0 && ret==0 &&
-					!(h->run_flags & IGNORE_ON_BREAK_R_F)))
-		for (mod=modules;mod;mod=mod->next)
-			if (unlikely(mod->exports.onbreak_f)) {
-				mod->exports.onbreak_f( msg );
-			}
 	return ret;
 
 
@@ -1611,7 +1616,7 @@ int run_actions_safe(struct run_act_ctx* h, struct action* a,
 	struct run_act_ctx ctx;
 	int ret;
 	int ign_on_break;
-	
+
 	/* start with a fresh action context */
 	init_run_actions_ctx(&ctx);
 	ctx.last_retcode = h->last_retcode;
@@ -1650,23 +1655,41 @@ int run_top_route(struct action* a, sip_msg_t* msg, struct run_act_ctx *c)
 int run_child_one_init_route(void)
 {
 	struct sip_msg *fmsg;
-	struct run_act_ctx ctx;
+	run_act_ctx_t ctx;
+	run_act_ctx_t *bctx;
 	int rtb, rt;
+	sr_kemi_eng_t *keng = NULL;
+	str evname = str_init("core:worker-one-init");
 
-	LM_DBG("attempting to run event_route[core:worker-one-init]\n");
+	LM_DBG("attempting to run event_route[%s]\n", evname.s);
 
-	rt = route_get(&event_rt, "core:worker-one-init");
-	if(rt>=0 && event_rt.rlist[rt]!=NULL) {
-		LM_DBG("executing event_route[core:worker-one-init] (%d)\n", rt);
+	if(kemi_event_route_callback.s!=NULL && kemi_event_route_callback.len>0) {
+		keng = sr_kemi_eng_get();
+		rt = -1;
+	} else {
+		rt = route_get(&event_rt, evname.s);
+	}
+	if((keng!=NULL) || (rt>=0 && event_rt.rlist[rt]!=NULL)) {
+		LM_DBG("executing event_route[%s] (%d)\n", evname.s, rt);
 		if(faked_msg_init()<0)
 			return -1;
 		fmsg = faked_msg_next();
 		rtb = get_route_type();
 		set_route_type(REQUEST_ROUTE);
 		init_run_actions_ctx(&ctx);
-		run_top_route(event_rt.rlist[rt], fmsg, &ctx);
-		if(ctx.run_flags&DROP_R_F)
-		{
+		if(keng==NULL) {
+			run_top_route(event_rt.rlist[rt], fmsg, &ctx);
+		} else {
+			bctx = sr_kemi_act_ctx_get();
+			sr_kemi_act_ctx_set(&ctx);
+			if(keng->froute(fmsg, EVENT_ROUTE,
+						&kemi_event_route_callback, &evname)<0) {
+				LM_ERR("error running event route kemi callback\n");
+				return -1;
+			}
+			sr_kemi_act_ctx_set(bctx);
+		}
+		if(ctx.run_flags&DROP_R_F) {
 			LM_ERR("exit due to 'drop' in event route\n");
 			return -1;
 		}

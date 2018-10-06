@@ -25,13 +25,14 @@
 #include "../../core/usr_avp.h"
 #include "../../core/pvar.h"
 #include "../../core/lvalue.h"
+#include "../../core/kemi.h"
 #include "lib_statsd.h"
 
 
 MODULE_VERSION
 
 static int mod_init(void);
-static int mod_destroy(void);
+void mod_destroy(void);
 static int func_gauge(struct sip_msg *msg, char *key, char* val);
 static int func_set(struct sip_msg *msg, char *key, char* val);
 static int func_time_start(struct sip_msg *msg, char *key);
@@ -64,18 +65,16 @@ static param_export_t parameters[] = {
 };
 
 struct module_exports exports = {
-    "statsd",    // module name
+    "statsd",        // module name
     DEFAULT_DLFLAGS, // dlopen flags
     commands,        // exported functions
     parameters,      // exported parameters
-    NULL,            // exported statistics
-    NULL,            // exported MI functions
+    NULL,            // exported RPC methods
     NULL,            // exported seudo-variables
-    NULL,            // extra processes
-    mod_init,        // module init function (before fork. kids will inherit)
     NULL,            // reply processing function
-    (destroy_function) mod_destroy,     // destroy function
-    NULL       // child init function
+    mod_init,        // module init function (before fork. kids will inherit)
+    0,               // child init function
+    mod_destroy      // destroy function
 };
 
 
@@ -107,10 +106,10 @@ static int mod_init(void)
 /**
 * destroy module function
 */
-static int mod_destroy(void)
+void mod_destroy(void)
 {
     statsd_destroy();
-    return 0;
+    return;
 }
 
 static int func_gauge(struct sip_msg* msg, char* key, char* val)
@@ -118,9 +117,19 @@ static int func_gauge(struct sip_msg* msg, char* key, char* val)
     return statsd_gauge(key, val);
 }
 
+static int ki_statsd_gauge(sip_msg_t* msg, str* key, str* val)
+{
+    return statsd_gauge(key->s, val->s);
+}
+
 static int func_set(struct sip_msg* msg, char* key, char* val)
 {
     return statsd_set(key, val);
+}
+
+static int ki_statsd_set(sip_msg_t* msg, str* key, str* val)
+{
+    return statsd_set(key->s, val->s);
 }
 
 static int func_time_start(struct sip_msg *msg, char *key)
@@ -141,6 +150,10 @@ static int func_time_start(struct sip_msg *msg, char *key)
     return 1;
 }
 
+static int ki_statsd_start(sip_msg_t *msg, str *key)
+{
+    return func_time_start(msg, key->s);
+}
 
 static int func_time_end(struct sip_msg *msg, char *key)
 {
@@ -182,18 +195,30 @@ static int func_time_end(struct sip_msg *msg, char *key)
     return statsd_timing(key, result);
 }
 
+static int ki_statsd_stop(sip_msg_t *msg, str *key)
+{
+    return func_time_end(msg, key->s);
+}
 
 static int func_incr(struct sip_msg *msg, char *key)
 {
     return statsd_count(key, "+1");
 }
 
+static int ki_statsd_incr(sip_msg_t *msg, str *key)
+{
+    return statsd_count(key->s, "+1");
+}
 
 static int func_decr(struct sip_msg *msg, char *key)
 {
     return statsd_count(key, "-1");
 }
 
+static int ki_statsd_decr(sip_msg_t *msg, str *key)
+{
+    return statsd_count(key->s, "-1");
+}
 
 char* get_milliseconds(char *dst){
     struct timeval tv;
@@ -203,4 +228,53 @@ char* get_milliseconds(char *dst){
     millis = (tv.tv_sec * (int)1000) + (tv.tv_usec / 1000);
     snprintf(dst, 21, "%ld", millis);
     return dst;
+}
+
+/**
+ *
+ */
+/* clang-format off */
+static sr_kemi_t sr_kemi_statsd_exports[] = {
+	{ str_init("statsd"), str_init("statsd_gauge"),
+		SR_KEMIP_INT, ki_statsd_gauge,
+		{ SR_KEMIP_STR, SR_KEMIP_STR, SR_KEMIP_NONE,
+			SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE }
+	},
+	{ str_init("statsd"), str_init("statsd_start"),
+		SR_KEMIP_INT, ki_statsd_start,
+		{ SR_KEMIP_STR, SR_KEMIP_NONE, SR_KEMIP_NONE,
+			SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE }
+	},
+	{ str_init("statsd"), str_init("statsd_stop"),
+		SR_KEMIP_INT, ki_statsd_stop,
+		{ SR_KEMIP_STR, SR_KEMIP_NONE, SR_KEMIP_NONE,
+			SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE }
+	},
+	{ str_init("statsd"), str_init("statsd_incr"),
+		SR_KEMIP_INT, ki_statsd_incr,
+		{ SR_KEMIP_STR, SR_KEMIP_NONE, SR_KEMIP_NONE,
+			SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE }
+	},
+	{ str_init("statsd"), str_init("statsd_decr"),
+		SR_KEMIP_INT, ki_statsd_decr,
+		{ SR_KEMIP_STR, SR_KEMIP_NONE, SR_KEMIP_NONE,
+			SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE }
+	},
+	{ str_init("statsd"), str_init("statsd_set"),
+		SR_KEMIP_INT, ki_statsd_set,
+		{ SR_KEMIP_STR, SR_KEMIP_STR, SR_KEMIP_NONE,
+			SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE }
+	},
+
+	{ {0, 0}, {0, 0}, 0, NULL, { 0, 0, 0, 0, 0, 0 } }
+};
+/* clang-format on */
+
+/**
+ *
+ */
+int mod_register(char *path, int *dlflags, void *p1, void *p2)
+{
+	sr_kemi_modules_add(sr_kemi_statsd_exports);
+	return 0;
 }

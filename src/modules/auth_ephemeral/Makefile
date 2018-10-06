@@ -11,6 +11,14 @@ SSL_BUILDER=$(shell \
 	if pkg-config --exists libssl; then \
 		echo 'pkg-config libssl'; \
 	fi)
+
+ifneq ($(SSL_BUILDER),)
+SSL_BUILDER+=$(shell \
+	if pkg-config --exists libcrypto; then \
+		echo 'libcrypto'; \
+	fi)
+endif
+
 endif
 
 ifneq ($(SSL_BUILDER),)
@@ -31,6 +39,5 @@ LIBS+= $(TLS_EXTRA_LIBS)
 # Static linking, if you'd like to use TLS and AUTH_EPHEMERAL at the same time
 #
 #LIBS+= /usr/lib/libcurl.a /usr/lib/libssl.a /usr/lib/libcrypto.a -lkrb5 -lidn -lz -lgssapi_krb5 -lrt
-DEFS+=-DKAMAILIO_MOD_INTERFACE
 
 include ../../Makefile.modules

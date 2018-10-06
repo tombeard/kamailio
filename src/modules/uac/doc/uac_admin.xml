@@ -10,7 +10,7 @@
 <!-- Module User's Guide -->
 
 <chapter>
-	
+
 	<title>&adminguide;</title>
 
 
@@ -90,7 +90,7 @@
 		<section>
 			<title>External Libraries or Applications</title>
 			<para>
-				The following libraries or applications must be installed 
+				The following libraries or applications must be installed
 				before running &kamailio; with this module loaded:
 				<itemizedlist>
 				<listitem>
@@ -108,12 +108,12 @@
 		<section id="uac.p.rr_from_store_param">
 			<title><varname>rr_from_store_param</varname> (string)</title>
 			<para>
-			Name of Record-Route header parameter that will be used to store 
+			Name of Record-Route header parameter that will be used to store
 			an encoded version of the original FROM URI.
 			</para>
 			<para>
 				<emphasis>
-					This parameter is optional, it's default value being 
+					This parameter is optional, it's default value being
 					<quote>vsf</quote>.
 				</emphasis>
 			</para>
@@ -129,12 +129,12 @@ modparam("uac","rr_from_store_param","my_param")
 		<section id="uac.p.rr_to_store_param">
 			<title><varname>rr_to_store_param</varname> (string)</title>
 			<para>
-			Name of Record-Route header parameter that will be used to store 
+			Name of Record-Route header parameter that will be used to store
 			(encoded) the original TO URI.
 			</para>
 			<para>
 				<emphasis>
-					This parameter is optional, it's default value being 
+					This parameter is optional, it's default value being
 					<quote>vst</quote>.
 				</emphasis>
 			</para>
@@ -154,20 +154,20 @@ modparam("uac","rr_to_store_param","my_param")
 			<itemizedlist>
 			<listitem>
 				<para>
-				<quote>none</quote> - no information about original URI is 
+				<quote>none</quote> - no information about original URI is
 				stored; restoration is not possible.
 				</para>
 			</listitem>
 			<listitem>
 				<para>
 				<quote>manual</quote> - all following replies will be restored,
-				but not also the sequential requests - this must be manually 
+				but not also the sequential requests - this must be manually
 				updated based on original URI.
 				</para>
 			</listitem>
 			<listitem>
 				<para>
-				<quote>auto</quote> - all sequential requests and replies will 
+				<quote>auto</quote> - all sequential requests and replies will
 				be automatically updated based on stored original URI. For this
 				option you have to set <quote>modparam("rr", "append_fromtag", 1)</quote>.
 				</para>
@@ -176,7 +176,7 @@ modparam("uac","rr_to_store_param","my_param")
 			</para>
 			<para>
 				<emphasis>
-					This parameter is optional, it's default value being 
+					This parameter is optional, it's default value being
 					<quote>auto</quote>.
 				</emphasis>
 			</para>
@@ -263,7 +263,7 @@ modparam("uac","restore_from_avp","$avp(original_uri_from)")
 			If defined and restore_mode is manual or auto, the avp is used to save
 			the original To URI in order to be able to restore it in replies.
 			That makes sense if the original-uri can not be extracted from the original
-			request, e.g. if msg_apply_changes() was used after calling uac_replace_to()  
+			request, e.g. if msg_apply_changes() was used after calling uac_replace_to()
 			</para>
 			<para>
 				If you create a dialog ( with dlg_manage() ) before calling or uac_replace_to(),
@@ -302,7 +302,7 @@ modparam("uac","credential","username:domain:password")
 				</programlisting>
 			</example>
 		</section>
-		<section id="uac.p.auth-realm-avp-id">
+		<section id="uac.p.auth_realm_avp">
 			<title><varname>auth_realm_avp</varname> (string)</title>
 			<para>
 			The definition of an PV that might contain the realm to be used
@@ -314,10 +314,10 @@ modparam("uac","credential","username:domain:password")
 			This can be used if the realm upstream will be using is not known in advance.
 			</para>
 			<para><emphasis>
-				If you define it, you also need to define 
-				<quote>auth_username_avp</quote> 
-				(<xref linkend="uac.p.auth-username-avp-id"/>) and 
-				<quote>auth_username_avp</quote> 
+				If you define it, you also need to define
+				<quote>auth_username_avp</quote>
+				(<xref linkend="uac.p.auth-username-avp-id"/>) and
+				<quote>auth_username_avp</quote>
 				(<xref linkend="uac.p.auth-password-avp-id"/>).
 			</emphasis></para>
 			<example>
@@ -329,17 +329,17 @@ modparam("uac","auth_realm_avp","$avp(i:10)")
 				</programlisting>
 			</example>
 		</section>
-		<section id="uac.p.auth-username-avp-id">
+		<section id="uac.p.auth_username_avp">
 			<title><varname>auth_username_avp</varname> (string)</title>
 			<para>
 			The definition of an AVP that might contain the username to be used
 			to perform authentication.
 			</para>
 			<para><emphasis>
-				If you define it, you also need to define 
-				<quote>auth_realm_avp</quote> 
-				(<xref linkend="uac.p.auth-realm-avp-id"/>) and 
-				<quote>auth_username_avp</quote> 
+				If you define it, you also need to define
+				<quote>auth_realm_avp</quote>
+				(<xref linkend="uac.p.auth-realm-avp-id"/>) and
+				<quote>auth_username_avp</quote>
 				(<xref linkend="uac.p.auth-password-avp-id"/>).
 			</emphasis></para>
 			<example>
@@ -351,17 +351,17 @@ modparam("uac","auth_username_avp","$avp(i:11)")
 				</programlisting>
 			</example>
 		</section>
-		<section id="uac.p.auth-password-avp-id">
+		<section id="uac.p.auth_password_avp">
 			<title><varname>auth_password_avp</varname> (string)</title>
 			<para>
 			The definition of an AVP that might contain the password to be used
 			to perform authentication.
 			</para>
 			<para><emphasis>
-				If you define it, you also need to define 
-				<quote>auth_password_avp</quote> 
-				(<xref linkend="uac.p.auth-password-avp-id"/>) and 
-				<quote>auth_username_avp</quote> 
+				If you define it, you also need to define
+				<quote>auth_password_avp</quote>
+				(<xref linkend="uac.p.auth-password-avp-id"/>) and
+				<quote>auth_username_avp</quote>
 				(<xref linkend="uac.p.auth-password-avp-id"/>).
 			</emphasis></para>
 			<example>
@@ -373,11 +373,13 @@ modparam("uac","auth_password_avp","$avp(i:12)")
 				</programlisting>
 			</example>
 		</section>
-		<section id="uac.p.reg-db-url-id">
+		<section id="uac.p.reg_db_url">
 			<title><varname>reg_db_url</varname> (string)</title>
 			<para>
-			DB URL to fetch account profiles for registration.
+			DB URL to fetch account profiles for registration. This parameter
+			must be set in order to enable remote registrations feature.
 			</para>
+			<para>The default value is "" (no value).</para>
 			<example>
 				<title>Set <varname>reg_db_url</varname> parameter</title>
 				<programlisting format="linespecific">
@@ -389,19 +391,19 @@ modparam("uac", "reg_db_url",
 			</example>
 		</section>
 
-		<section id="uac.p.reg-timer-interval-id">
-			<title><varname>reg_timer_interval</varname> (string)</title>
+		<section id="uac.p.reg_timer_interval">
+			<title><varname>reg_timer_interval</varname> (int)</title>
 			<para>
-			Timer interval (in seconds) at which registrations are managed, e.g. renewed as needed.  
+			Timer interval (in seconds) at which registrations are managed, e.g. renewed as needed.
 			</para>
 			<para>
 				<emphasis>
 				The default value is 90 seconds.
 				</emphasis>
 			</para>
-			
+
 			<example>
-				<title>Set <varname>reg_timer_inteval</varname> parameter</title>
+				<title>Set <varname>reg_timer_interval</varname> parameter</title>
 				<programlisting format="linespecific">
 ...
 modparam("uac", "reg_timer_interval", 60)
@@ -410,7 +412,7 @@ modparam("uac", "reg_timer_interval", 60)
 			</example>
 		</section>
 
-		<section id="uac.p.reg-retry-interval-id">
+		<section id="uac.p.reg_retry_interval">
 			<title><varname>reg_retry_interval</varname> (int)</title>
 			<para>
 			Failed registration attempts will be retried after this interval
@@ -429,7 +431,7 @@ modparam("uac", "reg_retry_interval", 300)
 			</example>
 		</section>
 
-		<section id="uac.p.reg-random-delay-id">
+		<section id="uac.p.reg_random_delay">
 			<title><varname>reg_random_delay</varname> (int)</title>
 			<para>
 			Set a random reg_delay for each registration that has
@@ -447,7 +449,7 @@ modparam("uac", "reg_random_delay", 300)
 			</example>
 		</section>
 
-		<section id="uac.p.reg-db-table-id">
+		<section id="uac.p.reg_db_table">
 			<title><varname>reg_db_table</varname> (string)</title>
 			<para>
 			DB table name to fetch user profiles for registration.
@@ -468,7 +470,7 @@ modparam("uac", "reg_db_table", "uacreg")
 			</example>
 		</section>
 
-		<section id="uac.p.reg-contact-addr-id">
+		<section id="uac.p.reg_contact_addr">
 			<title><varname>reg_contact_addr</varname> (string)</title>
 			<para>
 			Address to be used to build contact address. Must be at least
@@ -485,8 +487,8 @@ modparam("uac", "reg_contact_addr", "192.168.1.2:5080")
 			</example>
 		</section>
 
-		<section id="uac.p.reg-keep-callid">
-			<title><varname>reg_keep_callid</varname> (string)</title>
+		<section id="uac.p.reg_keep_callid">
+			<title><varname>reg_keep_callid</varname> (int)</title>
 			<para>
 			If set to 0 (default), a new Call-Id will be generated for each
 			registration attempt.
@@ -504,6 +506,27 @@ modparam("uac", "reg_keep_callid", 1)
 				</programlisting>
 			</example>
 		</section>
+
+
+		<section id="uac.p.reg_active">
+			<title><varname>reg_active</varname> (int)</title>
+			<para>
+				If set to 0, no remote regisrations are done. In other words,
+				it can control at once if the module should do remote registratios
+				or not. It can be changed at runtime via rpc command
+				'uac.reg_active 0|1'.
+			</para>
+			<para>The default value is 1 (active).</para>
+			<example>
+				<title>Set <varname>reg_active</varname> parameter</title>
+				<programlisting format="linespecific">
+...
+modparam("uac", "reg_active", 0)
+...
+				</programlisting>
+			</example>
+		</section>
+
 
 	</section>
 
@@ -566,7 +589,7 @@ uac_replace_from("","");
 				</programlisting>
 			</example>
 		</section>
-		<section id="uac.f.uac_replace_from(uri)">
+		<section id="uac.f.uac_replace_from_uri">
 			<title>
 				<function moreinfo="none">uac_replace_from(uri)</function>
 			</title>
@@ -589,7 +612,7 @@ uac_replace_from("sip:batman@gotham.org");
 				</programlisting>
 			</example>
 		</section>
-		<section id="uac.f.uac_restore_from()">
+		<section id="uac.f.uac_restore_from">
 			<title>
 				<function moreinfo="none">uac_restore_from()</function>
 			</title>
@@ -610,7 +633,7 @@ uac_restore_from();
 				</programlisting>
 			</example>
 		</section>
-		<section id="uac.f.uac_replace_to(display,uri)">
+		<section id="uac.f.uac_replace_to">
 		<title>
 				<function moreinfo="none">uac_replace_to(display,uri)</function>
 			</title>
@@ -646,7 +669,7 @@ uac_replace_to("","");
 				</programlisting>
 			</example>
 		</section>
-		<section id="uac.f.uac_replace_to(uri)">
+		<section id="uac.f.uac_replace_to_uri">
 			<title>
 				<function moreinfo="none">uac_replace_to(uri)</function>
 			</title>
@@ -712,7 +735,7 @@ uac_restore_to();
 				</programlisting>
 			</example>
 		</section>
-		<section id="uac.f.uac_auth()">
+		<section id="uac.f.uac_auth">
 			<title>
 				<function moreinfo="none">uac_auth()</function>
 			</title>
@@ -757,7 +780,7 @@ failure_route[TRUNKAUTH] {
 				</programlisting>
 			</example>
 		</section>
-		<section id="uac.f.uac_req_send()">
+		<section id="uac.f.uac_req_send">
 			<title>
 				<function moreinfo="none">uac_req_send()</function>
 			</title>
@@ -783,13 +806,13 @@ uac_req_send();
 				</programlisting>
 			</example>
 		</section>
-		<section id="uac.f.uac_reg_lookup(uuid, dst)">
+		<section id="uac.f.uac_reg_lookup">
 			<title>
 				<function moreinfo="none">uac_reg_lookup(uuid, dst)</function>
 			</title>
 			<para>
 			This function sets the PV dst to SIP URI that correspond to uuid
-			in uac registations table. uuid and dst must be pseudo-variables.
+			in uac registrations table. uuid and dst must be pseudo-variables.
 			</para>
 			<para>
 			This function can be used from ANY_ROUTE.
@@ -807,7 +830,7 @@ if(uac_reg_lookup("$rU", "$ru"))
 				</programlisting>
 			</example>
 		</section>
-		<section id="uac.f.uac_reg_status(uuid)">
+		<section id="uac.f.uac_reg_status">
 			<title>
 				<function moreinfo="none">uac_reg_status(uuid)</function>
 			</title>
@@ -858,7 +881,7 @@ $var(status) = uac_reg_status("$rU");
 				</programlisting>
 			</example>
 		</section>
-		<section id="uac.f.uac_reg_request_to(user, mode)">
+		<section id="uac.f.uac_reg_request_to">
 			<title>
 				<function moreinfo="none">uac_reg_request_to(user, mode)</function>
 			</title>
@@ -899,6 +922,70 @@ failure_route[REMOTE_AUTH] {
 				</programlisting>
 			</example>
 		</section>
+		<section id="uac.f.uac_reg_enable">
+			<title>
+				<function moreinfo="none">uac_reg_enable(attr, val)</function>
+			</title>
+		<para>
+			Enable a remote registration record based on a filter specified by
+			attribute and value. The attribute can be: l_uuid, l_username,
+			r_username or auth_username. The value is what should be matched
+			against the value of the attribute in the remote registration record.
+		</para>
+		<para>
+			The SIP processing is done on the next timer routine.
+		</para>
+		<example>
+		<title><function>uac_reg_enable</function> usage</title>
+			<programlisting format="linespecific">
+...
+   uac_reg_enable("l_uuid", "account123");
+...
+			</programlisting>
+		</example>
+		</section>
+
+		<section id="uac.f.uac_reg_disable">
+			<title>
+				<function moreinfo="none">uac_reg_disable(attr, val)</function>
+			</title>
+		<para>
+			Disable a remote registration record based on a filter specified by
+			attribute and value. The attribute can be: l_uuid, l_username,
+			r_username or auth_username. The value is what should be matched
+			against the value of the attribute in the remote registration record.
+		</para>
+		<para>
+			The SIP processing is done on the next timer routine.
+		</para>
+		<example>
+		<title><function>uac_reg_disable</function> usage</title>
+			<programlisting format="linespecific">
+...
+   uac_reg_disable("l_uuid", "account123");
+...
+			</programlisting>
+		</example>
+		</section>
+
+		<section id="uac.f.uac_reg_refresh">
+			<title>
+				<function moreinfo="none">uac_reg_refresh(luuid)</function>
+			</title>
+		<para>
+			Refresh the uac remote registration record based on local uuid. If
+			the record was already loaded, new values are taken from database,
+			otherwise a new record is created.
+		</para>
+		<example>
+		<title><function>uac_reg_refresh</function> usage</title>
+			<programlisting format="linespecific">
+...
+   uac_reg_refresh("account123");
+...
+			</programlisting>
+		</example>
+		</section>
 	</section>
 	<section>
 		<title>Pseudo Variables</title>
@@ -919,9 +1006,11 @@ failure_route[REMOTE_AUTH] {
 				<function moreinfo="none">event_route[uac:reply]</function>
 			</title>
 		<para>
-			Event route executed for the final reply to the request set with
-			uac_req_send(). The associated $uac_req(evroute) has to be set to
-			1.
+			Event route executed for the final reply of the branch for the
+			request sent with uac_req_send(). The associated $uac_req(evroute)
+			has to be set to 1. If the request is challenged for authentication
+			with 401/407, then the event_route is executed twice, first for
+			401/407 and second for final reply of the transaction.
 		</para>
 		<example>
 		<title><function>event_route[uac:reply]</function> usage</title>
@@ -951,7 +1040,7 @@ event_route[uac:reply] {
 				<emphasis>regtotal</emphasis>: Total number of registrations
 			</para></listitem>
 			<listitem><para>
-				<emphasis>regactive</emphasis>: Total number of active registrations (successfully registred with service)
+				<emphasis>regactive</emphasis>: Total number of active registrations (successfully registered with service)
 			</para></listitem>
 			<listitem><para>
 				<emphasis>regdisabled</emphasis>: Total number of disabled registrations (no longer active)
@@ -985,7 +1074,7 @@ event_route[uac:reply] {
 			Return the details of a remote registration record based on
 			a filter. The command has two parameter: attribute and value.
 			The attribute can be: l_uuid, l_username, r_username or auth_username.
-			The value is what should be matcheg against the value of the attribute
+			The value is what should be matched against the value of the attribute
 			in the remote registration record.
 		</para>
 		<para>
@@ -1027,7 +1116,7 @@ event_route[uac:reply] {
 			Enable a remote registration record based on
 			a filter. The command has two parameter: attribute and value.
 			The attribute can be: l_uuid, l_username, r_username or auth_username.
-			The value is what should be matcheg against the value of the attribute
+			The value is what should be matched against the value of the attribute
 			in the remote registration record.
 		</para>
 		<example>
@@ -1048,7 +1137,7 @@ event_route[uac:reply] {
 			Disable a remote registration record based on
 			a filter. The command has two parameter: attribute and value.
 			The attribute can be: l_uuid, l_username, r_username or auth_username.
-			The value is what should be matcheg against the value of the attribute
+			The value is what should be matched against the value of the attribute
 			in the remote registration record.
 		</para>
 		<example>
@@ -1092,6 +1181,26 @@ event_route[uac:reply] {
 			<programlisting format="linespecific">
 ...
    kamcmd uac.reg_refresh account123
+...
+			</programlisting>
+		</example>
+		</section>
+
+		<section id="uac.r.uac.reg_active">
+			<title>
+				<function moreinfo="none">uac.reg_active</function>
+			</title>
+		<para>
+			Control if the module should do remote registrations or not. Setting
+			to 1 enables remote registrations for all records and 0 disables
+			doing them.
+		</para>
+		<example>
+		<title><function>uac.reg_active</function> usage</title>
+			<programlisting format="linespecific">
+...
+   kamctl rpc uac.reg_active 0
+   kamctl rpc uac.reg_active 1
 ...
 			</programlisting>
 		</example>

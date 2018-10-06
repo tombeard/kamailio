@@ -98,7 +98,7 @@
 	<section id="rtpproxy.p.rtpproxy_sock">
 		<title><varname>rtpproxy_sock</varname> (string)</title>
 		<para>
-		Used to define the list of RTPPRoxy instances to connect to.
+		Used to define the list of RTPProxy instances to connect to.
 		These can be UNIX sockets or IPv4/IPv6 UDP sockets.
 
 		Each modparam entry will insert sockets into a single set. If no set ID is given, the default set ID '0' will be used. To define multiple sets add the set number at the beginning of each parameter followed by '=='.
@@ -193,7 +193,7 @@ modparam("rtpproxy", "rtpproxy_retr", 2)
 		<title><varname>nortpproxy_str</varname> (string)</title>
 		<para>
 		This parameter sets the SDP attribute used by rtpproxy to mark
-		the message's SDP attachemnt with information that it have
+		the message's SDP attachment with information that it have
 		already been changed.
 		</para>
 		<para>
@@ -271,7 +271,7 @@ modparam("rtpproxy", "ice_candidate_priority_avp", "$avp(ice_priority)")
 	<section id="rtpproxy.p.extra_id_pv">
 		<title><varname>extra_id_pv</varname> (string)</title>
 		<para>
-			The parameter sets the PV defination to use when the <quote>b</quote>
+			The parameter sets the PV definition to use when the <quote>b</quote>
 			parameter is used on unforce_rtp_proxy(), rtpproxy_offer(),
 			rtpproxy_answer() or rtpproxy_manage() command.
 		</para><para>
@@ -427,7 +427,7 @@ rtpproxy_offer();
 				<emphasis>b</emphasis> - append branch specific variable to Call-ID when sending
 				command to rtpproxy. This creates one rtpproxy session per unique variable.
 
-				Works similar to the 1, 2 and 3 parameter, but is usefull when forking to multiple
+				Works similar to the 1, 2 and 3 parameter, but is useful when forking to multiple
 				destinations on different address families or network segments, requiring different
 				rtpproxy parameters.
 
@@ -506,9 +506,9 @@ rtpproxy_offer();
 				be in 10ms increments, however for some codecs the increment
 				could differ (e.g. 30ms for GSM or 20ms for G.723).  The
 				RTPproxy would select the closest value supported by the codec.
-				This feature could be used for significantly reducing bandwith
+				This feature could be used for significantly reducing bandwidth
 				overhead for low bitrate codecs, for example with G.729 going
-				from 10ms to 100ms saves two thirds of the network bandwith.
+				from 10ms to 100ms saves two thirds of the network bandwidth.
 				</para></listitem>
 			</itemizedlist>
 		</listitem>
@@ -618,8 +618,8 @@ onreply_route[2]
 				<listitem><para>
 				<emphasis>b</emphasis> - append branch specific variable to Call-ID when sending
 				command to rtpproxy. See rtpproxy_offer() for details.
-				<listitem><para>
 				</para></listitem>
+				<listitem><para>
 				<emphasis>t</emphasis> - do not include To tag to <quote>delete</quote> command to rtpproxy thus causing full call to be deleted. Useful for deleting unused rtpproxy call when 200 OK is received on a branch, where rtpproxy is not needed.
 				</para></listitem>
 			</itemizedlist>
@@ -801,6 +801,29 @@ rtpproxy_manage();
 	    These functions can be used from REQUEST_ROUTE, ONREPLY_ROUTE.
 	</para>
 	</section>
+	<section id="rtpproxy.f.rtpproxy_stop_stream2uas">
+	<title>
+	    <function>rtpproxy_stop_stream2uas()</function>
+	</title>
+	<para>
+		See function <function>rtpproxy_stop_stream2uac()</function>.
+	</para>
+	<example>
+	    <title><function>rtpproxy_stop_stream2uas</function> usage</title>
+	    <programlisting>
+...
+    if (is_method("INVITE")) {
+        rtpproxy_offer();
+        if (is_audio_on_hold()) {
+            rtpproxy_stream2uas("/var/rtpproxy/prompts/music_on_hold", "-1");
+        } else {
+            rtpproxy_stop_stream2uas();
+        };
+    };
+...
+	    </programlisting>
+	</example>
+	</section>
 	<section id="rtpproxy.f.start_recording">
 		<title>
 		<function moreinfo="none">start_recording()</function>
@@ -822,15 +845,6 @@ start_recording();
 		</programlisting>
 		</example>
 	</section>
-	<section id="rtpproxy.f.rtpproxy_stop_stream2uas">
-	<title>
-	    <function>rtpproxy_stop_stream2uas(prompt_name, count)</function>
-	</title>
-	<para>
-		See function <function>rtpproxy_stop_stream2uac(prompt_name, count)</function>.
-	</para>
-	</section>
-
 
 	</section>
 
@@ -859,7 +873,7 @@ start_recording();
 	<section>
 		<title>RPC Commands</title>
 		<section id="rtpproxy.r.enable">
-			<title>rtpproxy.enable</title>
+			<title><function>rtpproxy.enable</function></title>
 			<para>
 			Enables a rtp proxy if parameter value is greater than 0.
 			Disables it if a zero value is given.

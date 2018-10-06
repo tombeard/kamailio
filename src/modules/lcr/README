@@ -20,7 +20,7 @@ Juha Heinanen
         1. Overview
         2. Dependencies
 
-              2.1. SIP Router modules
+              2.1. Kamailio Modules
               2.2. External libraries or applications
 
         3. Parameters
@@ -43,32 +43,36 @@ Juha Heinanen
               3.16. lcr_rule_table (string)
               3.17. prefix_column (string)
               3.18. from_uri_column (string)
-              3.19. request_uri_column (string)
-              3.20. stopper_column (string)
-              3.21. enabled_column (string)
-              3.22. lcr_rule_target_table (string)
-              3.23. rule_id_column (string)
-              3.24. gw_id_column (string)
-              3.25. priority_column (string)
-              3.26. weight_column (string)
-              3.27. lcr_count (integer)
-              3.28. gw_uri_avp (AVP string)
-              3.29. ruri_user_avp (AVP string)
-              3.30. tag_avp (AVP string)
-              3.31. flags_avp (AVP string)
-              3.32. defunct_capability (integer)
-              3.33. lcr_id_avp (AVP string)
-              3.34. defunct_gw_avp (AVP string)
-              3.35. lcr_rule_hash_size (integer)
-              3.36. lcr_gw_count (integer)
-              3.37. dont_strip_or_prefix_flag (integer)
-              3.38. priority_ordering (integer)
-              3.39. fetch_rows (integer)
-              3.40. ping_interval (integer)
-              3.41. ping_inactivate_threshold (integer)
-              3.42. ping_valid_reply_codes (string)
-              3.43. ping_from (string)
-              3.44. ping_socket (string)
+              3.19. mt_tvalue_column (string)
+              3.20. request_uri_column (string)
+              3.21. stopper_column (string)
+              3.22. enabled_column (string)
+              3.23. lcr_rule_target_table (string)
+              3.24. rule_id_column (string)
+              3.25. gw_id_column (string)
+              3.26. priority_column (string)
+              3.27. weight_column (string)
+              3.28. lcr_count (integer)
+              3.29. gw_uri_avp (AVP string)
+              3.30. ruri_user_avp (AVP string)
+              3.31. tag_avp (AVP string)
+              3.32. flags_avp (AVP string)
+              3.33. rule_id_avp (AVP string)
+              3.34. mt_pv_values (AVP string)
+              3.35. mtree (string)
+              3.36. defunct_capability (integer)
+              3.37. lcr_id_avp (AVP string)
+              3.38. defunct_gw_avp (AVP string)
+              3.39. lcr_rule_hash_size (integer)
+              3.40. lcr_gw_count (integer)
+              3.41. dont_strip_or_prefix_flag (integer)
+              3.42. priority_ordering (integer)
+              3.43. fetch_rows (integer)
+              3.44. ping_interval (integer)
+              3.45. ping_inactivate_threshold (integer)
+              3.46. ping_valid_reply_codes (string)
+              3.47. ping_from (string)
+              3.48. ping_socket (string)
 
         4. Functions
 
@@ -86,7 +90,8 @@ Juha Heinanen
               5.1. lcr.reload
               5.2. lcr.dump_gws
               5.3. lcr.dump_rules
-              5.4. lcr.defunct_gw
+              5.4. lcr.load_gws
+              5.5. lcr.defunct_gw
 
         6. Known Limitations
 
@@ -110,45 +115,50 @@ Juha Heinanen
    1.16. Setting lcr_rule_table module parameter
    1.17. Setting prefix_column module parameter
    1.18. Setting from_uri_column module parameter
-   1.19. Setting request_uri_column module parameter
-   1.20. Setting stopper_column module parameter
-   1.21. Setting enabled_column module parameter
-   1.22. Setting lcr_rule_target_table module parameter
-   1.23. Setting rule_id_column module parameter
-   1.24. Setting gw_id_column module parameter
-   1.25. Setting priority_column module parameter
-   1.26. Setting weight_column module parameter
-   1.27. Setting lcr_count module parameter
-   1.28. Setting gw_uri_avp module parameter
-   1.29. Setting ruri_user_avp module parameter
-   1.30. Setting tag_avp module parameter
-   1.31. Setting flags_avp module parameter
-   1.32. Setting defunct_capability module parameter
-   1.33. Setting lcr_id_avp module parameter
-   1.34. Setting defunct_gw_avp module parameter
-   1.35. Setting lcr_rule_hash_size module parameter
-   1.36. Setting lcr_gw_count module parameter
-   1.37. Setting dont_strip_or_prefix_flag module parameter
-   1.38. Setting priority_ordering module parameter
-   1.39. Set fetch_rows parameter
-   1.40. Set ping_interval parameter
-   1.41. Set ping_inactivate_threshold parameter
-   1.42. Set ping_valid_reply_codes parameter
-   1.43. Set ping_from parameter
-   1.44. Set ping_socket parameter
-   1.45. load_gws usage
-   1.46. next_gw usage from a route block
-   1.47. next_gw usage from a failure route block
-   1.48. inactivate_gw usage
-   1.49. defunct_gw usage
-   1.50. from_gw usage
-   1.51. from_gw usage
-   1.52. to_gw usage
-   1.53. to_gw usage
-   1.54. lcr.reload RPC example
-   1.55. lcr.dump_gws RPC example
-   1.56. lcr.dump_rules RPC example
-   1.57. lcr.defunct_gw RPC example
+   1.19. Setting from_uri_column module parameter
+   1.20. Setting request_uri_column module parameter
+   1.21. Setting stopper_column module parameter
+   1.22. Setting enabled_column module parameter
+   1.23. Setting lcr_rule_target_table module parameter
+   1.24. Setting rule_id_column module parameter
+   1.25. Setting gw_id_column module parameter
+   1.26. Setting priority_column module parameter
+   1.27. Setting weight_column module parameter
+   1.28. Setting lcr_count module parameter
+   1.29. Setting gw_uri_avp module parameter
+   1.30. Setting ruri_user_avp module parameter
+   1.31. Setting tag_avp module parameter
+   1.32. Setting flags_avp module parameter
+   1.33. Setting rule_id_avp module parameter
+   1.34. Setting tag_avp module parameter
+   1.35. Setting mtree module parameter
+   1.36. Setting defunct_capability module parameter
+   1.37. Setting lcr_id_avp module parameter
+   1.38. Setting defunct_gw_avp module parameter
+   1.39. Setting lcr_rule_hash_size module parameter
+   1.40. Setting lcr_gw_count module parameter
+   1.41. Setting dont_strip_or_prefix_flag module parameter
+   1.42. Setting priority_ordering module parameter
+   1.43. Set fetch_rows parameter
+   1.44. Set ping_interval parameter
+   1.45. Set ping_inactivate_threshold parameter
+   1.46. Set ping_valid_reply_codes parameter
+   1.47. Set ping_from parameter
+   1.48. Set ping_socket parameter
+   1.49. load_gws usage
+   1.50. next_gw usage from a route block
+   1.51. next_gw usage from a failure route block
+   1.52. inactivate_gw usage
+   1.53. defunct_gw usage
+   1.54. from_gw usage
+   1.55. from_gw usage
+   1.56. to_gw usage
+   1.57. to_gw usage
+   1.58. lcr.reload RPC example
+   1.59. lcr.dump_gws RPC example
+   1.60. lcr.dump_rules RPC example
+   1.61. lcr.load_gws RPC example
+   1.62. lcr.defunct_gw RPC example
 
 Chapter 1. Admin Guide
 
@@ -157,7 +167,7 @@ Chapter 1. Admin Guide
    1. Overview
    2. Dependencies
 
-        2.1. SIP Router modules
+        2.1. Kamailio Modules
         2.2. External libraries or applications
 
    3. Parameters
@@ -180,32 +190,36 @@ Chapter 1. Admin Guide
         3.16. lcr_rule_table (string)
         3.17. prefix_column (string)
         3.18. from_uri_column (string)
-        3.19. request_uri_column (string)
-        3.20. stopper_column (string)
-        3.21. enabled_column (string)
-        3.22. lcr_rule_target_table (string)
-        3.23. rule_id_column (string)
-        3.24. gw_id_column (string)
-        3.25. priority_column (string)
-        3.26. weight_column (string)
-        3.27. lcr_count (integer)
-        3.28. gw_uri_avp (AVP string)
-        3.29. ruri_user_avp (AVP string)
-        3.30. tag_avp (AVP string)
-        3.31. flags_avp (AVP string)
-        3.32. defunct_capability (integer)
-        3.33. lcr_id_avp (AVP string)
-        3.34. defunct_gw_avp (AVP string)
-        3.35. lcr_rule_hash_size (integer)
-        3.36. lcr_gw_count (integer)
-        3.37. dont_strip_or_prefix_flag (integer)
-        3.38. priority_ordering (integer)
-        3.39. fetch_rows (integer)
-        3.40. ping_interval (integer)
-        3.41. ping_inactivate_threshold (integer)
-        3.42. ping_valid_reply_codes (string)
-        3.43. ping_from (string)
-        3.44. ping_socket (string)
+        3.19. mt_tvalue_column (string)
+        3.20. request_uri_column (string)
+        3.21. stopper_column (string)
+        3.22. enabled_column (string)
+        3.23. lcr_rule_target_table (string)
+        3.24. rule_id_column (string)
+        3.25. gw_id_column (string)
+        3.26. priority_column (string)
+        3.27. weight_column (string)
+        3.28. lcr_count (integer)
+        3.29. gw_uri_avp (AVP string)
+        3.30. ruri_user_avp (AVP string)
+        3.31. tag_avp (AVP string)
+        3.32. flags_avp (AVP string)
+        3.33. rule_id_avp (AVP string)
+        3.34. mt_pv_values (AVP string)
+        3.35. mtree (string)
+        3.36. defunct_capability (integer)
+        3.37. lcr_id_avp (AVP string)
+        3.38. defunct_gw_avp (AVP string)
+        3.39. lcr_rule_hash_size (integer)
+        3.40. lcr_gw_count (integer)
+        3.41. dont_strip_or_prefix_flag (integer)
+        3.42. priority_ordering (integer)
+        3.43. fetch_rows (integer)
+        3.44. ping_interval (integer)
+        3.45. ping_inactivate_threshold (integer)
+        3.46. ping_valid_reply_codes (string)
+        3.47. ping_from (string)
+        3.48. ping_socket (string)
 
    4. Functions
 
@@ -223,7 +237,8 @@ Chapter 1. Admin Guide
         5.1. lcr.reload
         5.2. lcr.dump_gws
         5.3. lcr.dump_rules
-        5.4. lcr.defunct_gw
+        5.4. lcr.load_gws
+        5.5. lcr.defunct_gw
 
    6. Known Limitations
 
@@ -241,11 +256,11 @@ Chapter 1. Admin Guide
 
    For the purpose of facilitating least cost routing of requests, each
    gateway of an LCR instance is associated with one or more <prefix, from
-   uri pattern, request uri pattern, priority, weight> tuples. A gateway
-   matches a request if user part of the Request-URI matches a "prefix",
-   the caller's URI matches a "From-URI" pattern and the callee's URI
-   matches a "Request-URI" pattern in a tuple that is associated with the
-   gateway.
+   uri pattern, from uri userpart, request uri pattern, priority, weight>
+   tuples. A gateway matches a request if user part of Request-URI matches
+   "prefix", caller URI matches "from_uri" pattern, caller URI userpart
+   matches mtree with "mt_value", and callee URI matches "request_uri"
+   pattern in a tuple that is associated with the gateway.
 
    When the function load_gws() is called, matching gateways (that are not
    currently designated as defunct) are ordered for forwarding purposes as
@@ -300,17 +315,19 @@ Chapter 1. Admin Guide
    As a side effect of gateway selection, selected gateway's tag and flags
    (that may contain information about the gateway and its capabilities)
    are stored to tag_avp and flags_avp, respectively, if the corresponding
-   module parameter has been defined.
+   module parameter has been defined. In the same way, rule_id_avp, if
+   defined, contains the id of the rule that selected the gateway.
 
 2. Dependencies
 
-   2.1. SIP Router modules
+   2.1. Kamailio Modules
    2.2. External libraries or applications
 
-2.1. SIP Router modules
+2.1. Kamailio Modules
 
    The following modules must be loaded before this module:
      * A database module like mysql, postgres or dbtext.
+     * mtree module if mt_pv_values parameter is set.
 
 2.2. External libraries or applications
 
@@ -338,32 +355,36 @@ Chapter 1. Admin Guide
    3.16. lcr_rule_table (string)
    3.17. prefix_column (string)
    3.18. from_uri_column (string)
-   3.19. request_uri_column (string)
-   3.20. stopper_column (string)
-   3.21. enabled_column (string)
-   3.22. lcr_rule_target_table (string)
-   3.23. rule_id_column (string)
-   3.24. gw_id_column (string)
-   3.25. priority_column (string)
-   3.26. weight_column (string)
-   3.27. lcr_count (integer)
-   3.28. gw_uri_avp (AVP string)
-   3.29. ruri_user_avp (AVP string)
-   3.30. tag_avp (AVP string)
-   3.31. flags_avp (AVP string)
-   3.32. defunct_capability (integer)
-   3.33. lcr_id_avp (AVP string)
-   3.34. defunct_gw_avp (AVP string)
-   3.35. lcr_rule_hash_size (integer)
-   3.36. lcr_gw_count (integer)
-   3.37. dont_strip_or_prefix_flag (integer)
-   3.38. priority_ordering (integer)
-   3.39. fetch_rows (integer)
-   3.40. ping_interval (integer)
-   3.41. ping_inactivate_threshold (integer)
-   3.42. ping_valid_reply_codes (string)
-   3.43. ping_from (string)
-   3.44. ping_socket (string)
+   3.19. mt_tvalue_column (string)
+   3.20. request_uri_column (string)
+   3.21. stopper_column (string)
+   3.22. enabled_column (string)
+   3.23. lcr_rule_target_table (string)
+   3.24. rule_id_column (string)
+   3.25. gw_id_column (string)
+   3.26. priority_column (string)
+   3.27. weight_column (string)
+   3.28. lcr_count (integer)
+   3.29. gw_uri_avp (AVP string)
+   3.30. ruri_user_avp (AVP string)
+   3.31. tag_avp (AVP string)
+   3.32. flags_avp (AVP string)
+   3.33. rule_id_avp (AVP string)
+   3.34. mt_pv_values (AVP string)
+   3.35. mtree (string)
+   3.36. defunct_capability (integer)
+   3.37. lcr_id_avp (AVP string)
+   3.38. defunct_gw_avp (AVP string)
+   3.39. lcr_rule_hash_size (integer)
+   3.40. lcr_gw_count (integer)
+   3.41. dont_strip_or_prefix_flag (integer)
+   3.42. priority_ordering (integer)
+   3.43. fetch_rows (integer)
+   3.44. ping_interval (integer)
+   3.45. ping_inactivate_threshold (integer)
+   3.46. ping_valid_reply_codes (string)
+   3.47. ping_from (string)
+   3.48. ping_socket (string)
 
 3.1. db_url (string)
 
@@ -555,8 +576,8 @@ modparam("lcr", "lcr_rule_table", "rules")
 
 3.17. prefix_column (string)
 
-   Name of the column holding prefix of Request-URI user part and prefix
-   of gateway.
+   Name of the column in lcr_rule and lcr_gw tables holding prefix of
+   Request-URI user part and prefix of gateway, respectively.
 
    Default value is “prefix”.
 
@@ -576,110 +597,121 @@ modparam("lcr", "prefix_column", "number_prefix")
 modparam("lcr", "from_uri_column", "caller_uri")
 ...
 
-3.19. request_uri_column (string)
+3.19. mt_tvalue_column (string)
+
+   Name of the column holding mtree tvalue.
+
+   Default value is “mt_tvalue”.
+
+   Example 1.19. Setting from_uri_column module parameter
+...
+modparam("lcr", "mt_tvalue_column", "tree_value")
+...
+
+3.20. request_uri_column (string)
 
    Name of the column holding the regular expression to match against the
    complete request URI (including the "sip:" prefix).
 
    Default value is “request_uri”.
 
-   Example 1.19. Setting request_uri_column module parameter
+   Example 1.20. Setting request_uri_column module parameter
 ...
 modparam("lcr", "request_uri_column", "callee_uri")
 ...
 
-3.20. stopper_column (string)
+3.21. stopper_column (string)
 
    Name of the column holding rule's stopper attribute.
 
    Default value is “stopper”.
 
-   Example 1.20. Setting stopper_column module parameter
+   Example 1.21. Setting stopper_column module parameter
 ...
 modparam("lcr", "stopper_column", "stop")
 ...
 
-3.21. enabled_column (string)
+3.22. enabled_column (string)
 
    Name of the column telling is the rule is currently enabled or
    disabled.
 
    Default value is “enabled”.
 
-   Example 1.21. Setting enabled_column module parameter
+   Example 1.22. Setting enabled_column module parameter
 ...
 modparam("lcr", "enabled_column", "in_use")
 ...
 
-3.22. lcr_rule_target_table (string)
+3.23. lcr_rule_target_table (string)
 
    Name of the table holding information about the LCR rule targets
    (gateways).
 
    Default value is “lcr_rule_target”.
 
-   Example 1.22. Setting lcr_rule_target_table module parameter
+   Example 1.23. Setting lcr_rule_target_table module parameter
 ...
 modparam("lcr", "lcr_rule_target_table", "rules")
 ...
 
-3.23. rule_id_column (string)
+3.24. rule_id_column (string)
 
    Name of lcr_rule_target_table column containing an id of lcr_rule
    table.
 
    Default value is “rule_id”.
 
-   Example 1.23. Setting rule_id_column module parameter
+   Example 1.24. Setting rule_id_column module parameter
 ...
 modparam("lcr", "rule_id_column", "rule")
 ...
 
-3.24. gw_id_column (string)
+3.25. gw_id_column (string)
 
    Name of lcr_rule_target_table column containing an id of lcr_gw table.
 
    Default value is “gw_id”.
 
-   Example 1.24. Setting gw_id_column module parameter
+   Example 1.25. Setting gw_id_column module parameter
 ...
 modparam("lcr", "gw_id_column", "gw")
 ...
 
-3.25. priority_column (string)
+3.26. priority_column (string)
 
    Name of the column holding the priority of the rule target.
 
    Default value is “priority”.
 
-   Example 1.25. Setting priority_column module parameter
+   Example 1.26. Setting priority_column module parameter
 ...
 modparam("lcr", "priority_column", "priority")
 ...
 
-3.26. weight_column (string)
+3.27. weight_column (string)
 
    Name of the column holding weight of rule target.
 
    Default value is “weight”.
 
-   Example 1.26. Setting weight_column module parameter
+   Example 1.27. Setting weight_column module parameter
 ...
 modparam("lcr","weight_column", "target_weight")
 ...
 
-3.27. lcr_count (integer)
+3.28. lcr_count (integer)
 
-   Maximun value of lcr_id.
+   Maximum value of lcr_id.
 
    Default value is 1.
 
-   Example 1.27.  Setting lcr_count module parameter
+   Example 1.28.  Setting lcr_count module parameter
 ...
 modparam("lcr", "lcr_count", 10)
 ...
 
-3.28. gw_uri_avp (AVP string)
+3.29. gw_uri_avp (AVP string)
 
    Internal AVP that load_gws() function uses to store information of
    matching gateways.
@@ -687,12 +719,12 @@ modparam("lcr", "lcr_count", 10)
    There is NO default value, thus this variable must be defined in
    sip-router.cfg.
 
-   Example 1.28. Setting gw_uri_avp module parameter
+   Example 1.29. Setting gw_uri_avp module parameter
 ...
 modparam("lcr", "gw_uri_avp", "$avp(i:709)")
 ...
 
-3.29. ruri_user_avp (AVP string)
+3.30. ruri_user_avp (AVP string)
 
    Internal AVP that next_gw function uses to store Request-URI user for
    subsequent next_gw calls.
@@ -700,12 +732,12 @@ modparam("lcr", "gw_uri_avp", "$avp(i:709)")
    There is NO default value, thus this variable must be defined in
    sip-router.cfg.
 
-   Example 1.29. Setting ruri_user_avp module parameter
+   Example 1.30. Setting ruri_user_avp module parameter
 ...
 modparam("lcr", "ruri_user_avp", "$avp(i:500)")
 ...
 
-3.30. tag_avp (AVP string)
+3.31. tag_avp (AVP string)
 
    If defined, an AVP where successful next_gw and from_gw functions store
    gateway's tag.
@@ -713,12 +745,12 @@ modparam("lcr", "ruri_user_avp", "$avp(i:500)")
    There is NO default value, i.e, if not defined, gateway's tag is not
    stored anywhere.
 
-   Example 1.30. Setting tag_avp module parameter
+   Example 1.31. Setting tag_avp module parameter
 ...
 modparam("lcr", "tag_avp", "$avp(lcr_tag)")
 ...
 
-3.31. flags_avp (AVP string)
+3.32. flags_avp (AVP string)
 
    If defined, an AVP where successful next_gw and from_gw functions store
    gateway's flags.
@@ -726,24 +758,63 @@ modparam("lcr", "tag_avp", "$avp(lcr_tag)")
    There is NO default value, i.e, if not defined, gateway's flags are not
    stored anywhere.
 
-   Example 1.31. Setting flags_avp module parameter
+   Example 1.32. Setting flags_avp module parameter
 ...
 modparam("lcr", "flags_avp", "$avp(i:712)")
 ...
 
-3.32. defunct_capability (integer)
+3.33. rule_id_avp (AVP string)
+
+   If defined, an AVP where successful next_gw and from_gw functions store
+   matching rule's id.
+
+   There is NO default value, i.e, if not defined, matching rule's id is
+   not stored anywhere.
+
+   Example 1.33. Setting rule_id_avp module parameter
+                                ...
+                                modparam("lcr", "rule_id_avp", "$avp(i:712)")
+                                ...
+
+3.34. mt_pv_values (AVP string)
+
+   If defined and mt_value is given for a rule, load_gws() matches caller
+   URI userpart to a mtree given as mtree parameter.
+
+   If defined, must have the same value as mtree module pv_values
+   parameter.
+
+   There is NO default value.
+
+   Example 1.34. Setting tag_avp module parameter
+...
+modparam("lcr", "mt_pv_values", "$avp(mt_values)")
+...
+
+3.35. mtree (string)
+
+   Name of mtree to which load_gws() matches caller URI userpart.
+
+   Default value is "lcr".
+
+   Example 1.35. Setting mtree module parameter
+...
+modparam("lcr", "mtree", "caller_tree")
+...
+
+3.36. defunct_capability (integer)
 
    Tells if defunct capability of (non-responsive) gateways is supported.
    Non-zero value turns on defunct capability.
 
    Default value is 0.
 
-   Example 1.32.  Setting defunct_capability module parameter
+   Example 1.36.  Setting defunct_capability module parameter
 ...
 modparam("lcr", "defunct_capability", 1)
 ...
 
-3.33. lcr_id_avp (AVP string)
+3.37. lcr_id_avp (AVP string)
 
    Internal AVP that load_gws() function uses to store LCR instance
    identifier of loaded gateways. Only needed if gateway defunct
@@ -751,12 +822,12 @@ modparam("lcr", "defunct_capability", 1)
 
    There is NO default value.
 
-   Example 1.33. Setting lcr_id_avp module parameter
+   Example 1.37. Setting lcr_id_avp module parameter
 ...
 modparam("lcr", "lcr_id_avp", "$avp(s:lcr_id_avp)")
 ...
 
-3.34. defunct_gw_avp (AVP string)
+3.38. defunct_gw_avp (AVP string)
 
    Internal AVP that next_gw() function uses to store internal index of
    the selected gateway for later use by defunct_gw() function. Only
@@ -764,12 +835,12 @@ modparam("lcr", "lcr_id_avp", "$avp(s:lcr_id_avp)")
 
    There is NO default value.
 
-   Example 1.34. Setting defunct_gw_avp module parameter
+   Example 1.38. Setting defunct_gw_avp module parameter
 ...
 modparam("lcr", "defunct_gw_avp", "$avp(s:defunct_gw_avp)")
 ...
 
-3.35. lcr_rule_hash_size (integer)
+3.39. lcr_rule_hash_size (integer)
 
    Defines the size of hash table used to store LCR rules. Hashing is done
    based on rule's prefix. Larger value means less collisions with other
@@ -777,46 +848,46 @@ modparam("lcr", "defunct_gw_avp", "$avp(s:defunct_gw_avp)")
 
    Default value is 128.
 
-   Example 1.35.  Setting lcr_rule_hash_size module parameter
+   Example 1.39.  Setting lcr_rule_hash_size module parameter
 ...
 modparam("lcr", "lcr_rule_hash_size", 1024)
 ...
 
-3.36. lcr_gw_count (integer)
+3.40. lcr_gw_count (integer)
 
    Defines the maximum number of gateways in lcr_gw table.
 
    Default value is 128.
 
-   Example 1.36.  Setting lcr_gw_count module parameter
+   Example 1.40.  Setting lcr_gw_count module parameter
 ...
 modparam("lcr", "lcr_gw_count", 1024)
 ...
 
-3.37. dont_strip_or_prefix_flag (integer)
+3.41. dont_strip_or_prefix_flag (integer)
 
    Defines the flag number used to tell if stripping and tagging is done
    for the selected gateway.
 
    Default value is -1 meaning that the flag is not defined.
 
-   Example 1.37.  Setting dont_strip_or_prefix_flag module parameter
+   Example 1.41.  Setting dont_strip_or_prefix_flag module parameter
 ...
 modparam("lcr", "dont_strip_or_prefix_flag", 10)
 ...
 
-3.38. priority_ordering (integer)
+3.42. priority_ordering (integer)
 
    Defines how matching gateways are ordered (see Overview section).
 
    Default value is 0.
 
-   Example 1.38.  Setting priority_ordering module parameter
+   Example 1.42.  Setting priority_ordering module parameter
 ...
 modparam("lcr", "priority_ordering", 1)
 ...
 
-3.39. fetch_rows (integer)
+3.43. fetch_rows (integer)
 
    The number of the rows to be fetched at once from database when loading
    data from lcr_rule table. This value can be used to tune the load time
@@ -826,12 +897,12 @@ modparam("lcr", "priority_ordering", 1)
 
    Default value is “1024”.
 
-   Example 1.39. Set fetch_rows parameter
+   Example 1.43. Set fetch_rows parameter
 ...
 modparam("lcr", "fetch_rows", 3000)
 ...
 
-3.40. ping_interval (integer)
+3.44. ping_interval (integer)
 
    Interval in seconds for sending OPTIONS ping requests to gateways that,
    due to failures, have been marked as inactive by inactivate_gw()
@@ -846,24 +917,24 @@ modparam("lcr", "fetch_rows", 3000)
 
    Default value is “0”.
 
-   Example 1.40.  Set ping_interval parameter
+   Example 1.44.  Set ping_interval parameter
 ...
 modparam("lcr", "ping_interval", 15)
 ...
 
-3.41. ping_inactivate_threshold (integer)
+3.45. ping_inactivate_threshold (integer)
 
    Tells after how many failures (= inactivate_gw() function calls) a
    gateway is marked as inactive.
 
    Default value is “1”, i.e., gateway is inactivated after first failure.
 
-   Example 1.41.  Set ping_inactivate_threshold parameter
+   Example 1.45.  Set ping_inactivate_threshold parameter
 ...
 modparam("lcr", "ping_inactivate_threshold", 3)
 ...
 
-3.42. ping_valid_reply_codes (string)
+3.46. ping_valid_reply_codes (string)
 
    A comma separated list of SIP reply codes, which are accepted as valid
    replies to OPTIONS ping requests. Reply codes 2xx are by default
@@ -872,30 +943,30 @@ modparam("lcr", "ping_inactivate_threshold", 3)
    Default value is “”, i.e., only 2xx replies are considered as valid
    replies.
 
-   Example 1.42.  Set ping_valid_reply_codes parameter
+   Example 1.46.  Set ping_valid_reply_codes parameter
 ...
 modparam("lcr", "ping_valid_reply_codes", "403,405,501")
 ...
 
-3.43. ping_from (string)
+3.47. ping_from (string)
 
    From URI used in OPTIONS ping requests.
 
    Default value is “sip:pinger@localhost”.
 
-   Example 1.43.  Set ping_from parameter
+   Example 1.47.  Set ping_from parameter
 ...
 modparam("lcr", "ping_from", "sip:proxy.operator.com")
 ...
 
-3.44. ping_socket (string)
+3.48. ping_socket (string)
 
    Socket to be used for sending OPTIONS ping request. If not set or set
    to “”, default socket is used.
 
    Default value is “”.
 
-   Example 1.44.  Set ping_socket parameter
+   Example 1.48.  Set ping_socket parameter
 ...
 modparam("lcr", "ping_socket", "192.98.102.10:5060")
 ...
@@ -920,7 +991,7 @@ modparam("lcr", "ping_socket", "192.98.102.10:5060")
    look for matching gateways. Caller's URI may be given by caller_uri
    argument. If caller_uri argument is omitted, it defaults to empty
    string. Both uri_user and caller_uri argument may be a string or a
-   pseudo variable containing a sting value.
+   pseudo variable containing a string value.
 
    Returns 1 if at least one matching gateway was found, 2 if no matching
    gateways was found, and -1 on error.
@@ -931,7 +1002,7 @@ modparam("lcr", "ping_socket", "192.98.102.10:5060")
 
    This function can be used from REQUEST_ROUTE.
 
-   Example 1.45. load_gws usage
+   Example 1.49. load_gws usage
 ...
 if (!load_gws(1, $rU, $var(caller_uri))) {
         sl_send_reply("500", "Server Internal Error - Cannot load gateways");
@@ -952,7 +1023,8 @@ if (!load_gws(1, $rU, $var(caller_uri))) {
 
    As a side effect, stores gateway's tag and flags to tag_avp and
    flags_avp, respectively, if the corresponding module parameter has been
-   defined.
+   defined. In the same way, rule_id_avp, if defined, contains the id of
+   the rule that selected the gateway.
 
    Returns 1 on success and -1 if there were no gateways left or if an
    error occurred (see syslog).
@@ -961,7 +1033,7 @@ if (!load_gws(1, $rU, $var(caller_uri))) {
 
    This function can be used from REQUEST_ROUTE, FAILURE_ROUTE.
 
-   Example 1.46. next_gw usage from a route block
+   Example 1.50. next_gw usage from a route block
 ...
 if (!next_gw()) {
         sl_send_reply("503", "Service not available - No gateways");
@@ -969,7 +1041,7 @@ if (!next_gw()) {
 };
 ...
 
-   Example 1.47. next_gw usage from a failure route block
+   Example 1.51. next_gw usage from a failure route block
 ...
 if (!next_gw()) {
         t_reply("503", "Service not available - No more gateways");
@@ -989,7 +1061,7 @@ if (!next_gw()) {
 
    This function can be used from REQUEST_ROUTE and FAILURE_ROUTE.
 
-   Example 1.48. inactivate_gw usage
+   Example 1.52. inactivate_gw usage
 ...
 failure_route [GW_FAILURE] {
 ...
@@ -1010,7 +1082,7 @@ failure_route [GW_FAILURE] {
 
    This function can be used from REQUEST_ROUTE, FAILURE_ROUTE.
 
-   Example 1.49. defunct_gw usage
+   Example 1.53. defunct_gw usage
 ...
 defunct_gw(60);
 ...
@@ -1032,7 +1104,9 @@ defunct_gw(60);
 
    If request comes from a gateway, gateway's tag and flags are stored as
    a side effect to tag_avp and flags_avp, respectively, if the
-   corresponding module parameter has been defined.
+   corresponding module parameter has been defined. In the same way,
+   rule_id_avp, if defined, contains the id of the rule that selected the
+   gateway.
 
    Returns 1 on success and -1 on failure or on error.
 
@@ -1042,7 +1116,7 @@ defunct_gw(60);
    This function can be used from REQUEST_ROUTE, FAILURE_ROUTE,
    ONREPLY_ROUTE.
 
-   Example 1.50. from_gw usage
+   Example 1.54. from_gw usage
 ...
 if (from_gw(1, $avp(s:real_source_addr), 2) {
         ...
@@ -1064,7 +1138,9 @@ if (from_gw(1, $avp(s:real_source_addr), 2) {
 
    If request comes from a gateway, gateway's tag and flags are stored as
    a side effect to tag_avp and flags_avp, respectively, if the
-   corresponding module parameter has been defined.
+   corresponding module parameter has been defined. In the same way,
+   rule_id_avp, if defined, contains the id of the rule that selected the
+   gateway.
 
    Execution time of from_gw() function is M * O(log N), where M is number
    of LCR instances and N is average number of gateways in LCR instances.
@@ -1072,7 +1148,7 @@ if (from_gw(1, $avp(s:real_source_addr), 2) {
    This function can be used from REQUEST_ROUTE, FAILURE_ROUTE,
    ONREPLY_ROUTE.
 
-   Example 1.51. from_gw usage
+   Example 1.55. from_gw usage
 ...
 $var(lcr_id) = from_any_gw("192.168.1.1", 3);
 ...
@@ -1093,7 +1169,7 @@ $var(lcr_id) = from_any_gw("192.168.1.1", 3);
 
    This function can be used from REQUEST_ROUTE, FAILURE_ROUTE.
 
-   Example 1.52. to_gw usage
+   Example 1.56. to_gw usage
 ...
 if (to_gw("1")) {
         ...
@@ -1119,7 +1195,7 @@ if (to_gw("1")) {
 
    This function can be used from REQUEST_ROUTE, FAILURE_ROUTE.
 
-   Example 1.53. to_gw usage
+   Example 1.57. to_gw usage
 ...
 if (to_any_gw("192.55.66.2", 1)) {
         ...
@@ -1132,7 +1208,8 @@ if (to_any_gw("192.55.66.2", 1)) {
    5.1. lcr.reload
    5.2. lcr.dump_gws
    5.3. lcr.dump_rules
-   5.4. lcr.defunct_gw
+   5.4. lcr.load_gws
+   5.5. lcr.defunct_gw
 
 5.1. lcr.reload
 
@@ -1142,7 +1219,7 @@ if (to_any_gw("192.55.66.2", 1)) {
 
    Parameters: none
 
-   Example 1.54. lcr.reload RPC example
+   Example 1.58. lcr.reload RPC example
                 $ kamcmd lcr.reload
 
 5.2. lcr.dump_gws
@@ -1151,7 +1228,7 @@ if (to_any_gw("192.55.66.2", 1)) {
 
    Parameters: none
 
-   Example 1.55. lcr.dump_gws RPC example
+   Example 1.59. lcr.dump_gws RPC example
                 $ kamcmd lcr.dump_gws
 
 5.3. lcr.dump_rules
@@ -1161,10 +1238,21 @@ if (to_any_gw("192.55.66.2", 1)) {
 
    Parameters: none
 
-   Example 1.56. lcr.dump_rules RPC example
+   Example 1.60. lcr.dump_rules RPC example
                 $ kamcmd lcr.dump_rules
 
-5.4. lcr.defunct_gw
+5.4. lcr.load_gws
+
+   Loads gateways and prints ids of matching ones in priority order.
+
+   Name: lcr.load_gws
+
+   Parameters: lcr_id uri_user [caller_uri request_uri]
+
+   Example 1.61. lcr.load_gws RPC example
+                $ kamcmd lcr.load_gws 2 s:0447058050
+
+5.5. lcr.defunct_gw
 
    Defuncts gateway loaded into memory for a period of time (seconds)
    without a need to store gateway's defunct value into database and
@@ -1174,7 +1262,7 @@ if (to_any_gw("192.55.66.2", 1)) {
 
    Parameters: lcr_id gw_id period
 
-   Example 1.57. lcr.defunct_gw RPC example
+   Example 1.62. lcr.defunct_gw RPC example
                 $ kamcmd lcr.defunct_gw 1 4 120
 
 6. Known Limitations

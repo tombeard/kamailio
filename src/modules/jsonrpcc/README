@@ -1,4 +1,4 @@
-jsonrpc-c (client) Module
+JSONRPCC (jsonrpc client) Module
 
 Matthew Williams
 
@@ -69,10 +69,10 @@ Chapter 1. Admin Guide
 
    This module uses t_suspend() and t_continue() from the TM module.
 
-   Note that after invoking an asyncronous operation, the processing will
+   Note that after invoking an asynchronous operation, the processing will
    continue later, in another application process. Therefore, do not rely
    on variables stored in private memory, use shared memory if you want to
-   get values after the processing is resumend (e.g., $shv(...) or htable
+   get values after the processing is resumed (e.g., $shv(...) or htable
    $sht(...)).
 
 2. Dependencies
@@ -110,8 +110,8 @@ Chapter 1. Admin Guide
 
    Example 1.1. Set servers parameter
 ...
-modparam("jsonrpc", "servers", "localhost:9999,2 10.10.0.1:9999,2 backup.server:
-9999,1")
+modparam("jsonrpcc", "servers", "localhost:9999,2 10.10.0.1:9999,2 backup.server
+:9999,1")
 ...
 
 3.2. max_conn_attempts (int)
@@ -121,7 +121,7 @@ modparam("jsonrpc", "servers", "localhost:9999,2 10.10.0.1:9999,2 backup.server:
 
    Example 1.2. Set max_conn_attempts parameter
 ...
-modparam("jsonrpc", "max_conn_attempts", 10)
+modparam("jsonrpcc", "max_conn_attempts", 10)
 ...
 
 4. Functions

@@ -45,13 +45,18 @@
 #include "pua_usrloc.h"
 
 #define BUF_LEN   256
-int pua_set_publish(struct sip_msg* msg , char* s1, char* s2)
+int ki_pua_set_publish(sip_msg_t* msg)
 {
 	LM_DBG("set send publish\n");
 	pua_ul_publish= 1;
 	if(pua_ul_bmask!=0)
 		setbflag(0, pua_ul_bflag);
 	return 1;
+}
+
+int w_pua_set_publish(struct sip_msg* msg , char* s1, char* s2)
+{
+	return ki_pua_set_publish(msg);
 }
 
 int pua_unset_publish(struct sip_msg* msg, unsigned int flags, void* param)
@@ -205,6 +210,8 @@ void ul_publish(ucontact_t* c, int type, void* param)
 	int size= 0;
 	str content_type;
 	int error;
+
+	if(destroy_modules_phase()) return;
 
 	content_type.s= "application/pidf+xml";
 	content_type.len= 20;

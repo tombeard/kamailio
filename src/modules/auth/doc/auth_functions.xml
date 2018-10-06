@@ -1,11 +1,17 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE section PUBLIC "-//OASIS//DTD DocBook XML V4.2//EN" 
-   "http://www.oasis-open.org/docbook/xml/4.2/docbookx.dtd">
+<!DOCTYPE book PUBLIC "-//OASIS//DTD DocBook XML V4.4//EN"
+"http://www.oasis-open.org/docbook/xml/4.4/docbookx.dtd" [
+
+<!-- Include general documentation entities -->
+<!ENTITY % docentities SYSTEM "../../../../doc/docbook/entities.xml">
+%docentities;
+
+]>
 
 <section id="auth.functions" xmlns:xi="http://www.w3.org/2001/XInclude">
 
     <title>Functions</title>
-    
+
     <section id="auth.f.consume_credentials">
 	<title><function>consume_credentials()</function></title>
 	<para>
@@ -26,7 +32,7 @@
 ...
 if (www_authenticate("realm", "subscriber")) {
     consume_credentials();
-};
+}
 ...
 	    </programlisting>
 	</example>
@@ -34,7 +40,7 @@ if (www_authenticate("realm", "subscriber")) {
     <section id="auth.f.has_credentials">
 	<title><function>has_credentials(realm)</function></title>
 	<para>
-		This function returns true of the request has Autorization or
+		This function returns true of the request has Authorization or
 		Proxy-Authorization header with provided realm. The parameter
 		can be string with pseudo-variables.
 	</para>
@@ -57,10 +63,10 @@ if (has_credentials("myrealm")) {
 		The function challenges a user agent. It will generate a
 		WWW-Authorize header field containing a digest challenge, it will
 		put the header field into a response generated from the request the
-		server is processing and send the reply. Upon reception of such a
+		server is processing and send the 401 reply. Upon reception of such a
 		reply the user agent should compute credentials and retry the
 		request. For more information regarding digest authentication
-		see RFC2617.  See module parameter force_stateless_reply
+		see RFC2617. See module parameter force_stateless_reply
 		regarding sending of the reply.
 		</para>
 		<para>Meaning of the parameters is as follows:</para>
@@ -116,6 +122,7 @@ if (has_credentials("myrealm")) {
 ...
 if (!www_authenticate("$td", "subscriber")) {
 	www_challenge("$td", "1");
+	exit;
 }
 ...
 </programlisting>
@@ -130,7 +137,7 @@ if (!www_authenticate("$td", "subscriber")) {
 		The function challenges a user agent. It will generate a
 		Proxy-Authorize header field containing a digest challenge, it will
 		put the header field into a response generated from the request the
-		server is processing and send the reply. Upon reception of such a
+		server is processing and send the 407 reply. Upon reception of such a
 		reply the user agent should compute credentials and retry the request.
 		For more information regarding digest authentication see RFC2617.
 		See module parameter force_stateless_reply regarding sending of the reply.
@@ -146,7 +153,8 @@ if (!www_authenticate("$td", "subscriber")) {
 ...
 if (!proxy_authenticate("$fd", "subscriber")) {
 	proxy_challenge("$fd", "1");
-};
+	exit;
+}
 ...
 </programlisting>
 		</example>
@@ -160,7 +168,9 @@ if (!proxy_authenticate("$fd", "subscriber")) {
 		The function challenges a user agent for authentication. It combines
 		the functions www_challenge() and proxy_challenge(), by calling
 		internally the first one for REGISTER requests and the second one for
-		the rest of other request types.
+		the rest of other request types. In other words, it challenges for
+		authentication by sending a 401 reply for REGISTER requests and 407
+		reply for the other types of SIP requests.
 		</para>
 		<para>Meaning of the parameters the same as for function
 		www_challenge(realm, flags)</para>
@@ -173,7 +183,8 @@ if (!proxy_authenticate("$fd", "subscriber")) {
 ...
 if (!auth_check("$fd", "subscriber", "1")) {
 	auth_challenge("$fd", "1");
-};
+	exit;
+}
 ...
 </programlisting>
 		</example>
@@ -225,10 +236,10 @@ if (!auth_check("$fd", "subscriber", "1")) {
 			</para>
 			<para>
 			It must not be empty string <quote></quote>. In case of REGISTER
-			requests To header field domain (e.g., varibale $td) can be used
+			requests To header field domain (e.g., variable $td) can be used
 			(because this header field represents a user being registered),
 			for all other messages From header field domain can be used
-			(e.g., varibale $fd).
+			(e.g., variable $fd).
 			</para>
 			<para>
 			The string may contain pseudo variables.
@@ -287,7 +298,8 @@ if (!auth_check("$fd", "subscriber", "1")) {
 ...
 if (!pv_www_authenticate("$td", "123abc", "0")) {
 	www_challenge("$td", "1");
-};
+	exit;
+}
 ...
 </programlisting>
 		</example>
@@ -321,7 +333,8 @@ if (!pv_www_authenticate("$td", "123abc", "0")) {
 $avp(password)="xyz";
 if (!pv_proxy_authenticate("$fd", "$avp(password)", "0")) {
 	proxy_challenge("$fd", "1");
-};
+	exit;
+}
 ...
 </programlisting>
 		</example>
@@ -335,7 +348,7 @@ if (!pv_proxy_authenticate("$fd", "$avp(password)", "0")) {
 		The function combines the functionalities of
 		<function moreinfo="none">pv_www_authenticate</function> and
 		<function moreinfo="none">pv_proxy_authenticate</function>, first being
-		exectuted if the SIP request is a REGISTER, the second for the rest.
+		executed if the SIP request is a REGISTER, the second for the rest.
 		</para>
 		<para>
 		Meaning of the first three parameters is the same as for
@@ -364,8 +377,9 @@ if (!pv_proxy_authenticate("$fd", "$avp(password)", "0")) {
 ...
 $avp(password)="xyz";
 if (!pv_auth_check("$fd", "$avp(password)", "0", "1")) {
-	proxy_challenge("$fd", "1");
-};
+	auth_challenge("$fd", "1");
+	exit;
+}
 ...
 </programlisting>
 		</example>

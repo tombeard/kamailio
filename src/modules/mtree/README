@@ -62,6 +62,13 @@ Juha Heinanen
               5.3. mtree.reload
               5.4. mtree.match
 
+   2. Developer Guide
+
+        1. Available Functions
+
+              1.1. mt_load_api(api)
+              1.2. mt_match(msg, mtree, value, mode)
+
    List of Examples
 
    1.1. Set db_url parameter
@@ -175,19 +182,20 @@ modparam("mtree", "db_url", "dbdriver://username:password@dbhost/dbname")
 
 3.2. db_table (string)
 
-   Name of database table where data for trees is stored. It is ignored if
-   a 'mtree' parameter is defined.
+   Name of database table where data for many trees is stored. It is
+   ignored if a 'mtree' parameter is defined. The SQL scripts creates a
+   table named 'mtrees' that can be used for this parameter.
 
-   Default value is “mtrees”.
+   Default value is “” (no table name).
 
    Example 1.2. Set db_table parameter
 ...
-modparam("mtree", "db_table", "mymtrees")
+modparam("mtree", "db_table", "mtrees")
 ...
 
 3.3. mtree (string)
 
-   Definition of memory tree with using a prameters format string. The
+   Definition of memory tree with using a parameters format string. The
    parameter names can be:
      * name - the name of the tree to be used for referencing inside
        configuration file.
@@ -205,11 +213,11 @@ modparam("mtree", "db_table", "mymtrees")
        extract a specific column value).
      * type - the type of tree elements (0 = string, 2 = integer). It is
        valid only when the (tprefix, tvalue) pairs are loaded (not for
-       muti-column values).
+       multi-column values).
      * multi - tells if dbtable can contain more than one tree (0 = one
        tree, 1 = more than one tree identified by tname column). It is
        valid only when the (tprefix, tvalue) pairs are loaded (not for
-       muti-column values).
+       multi-column values).
 
    This parameter can be set many times to add more trees in memory.
 
@@ -406,3 +414,36 @@ kamcmd mtree.list mytree
        - match prefix
      * _mode_
        - matching mode
+
+Chapter 2. Developer Guide
+
+   Table of Contents
+
+   1. Available Functions
+
+        1.1. mt_load_api(api)
+        1.2. mt_match(msg, mtree, value, mode)
+
+1. Available Functions
+
+   1.1. mt_load_api(api)
+   1.2. mt_match(msg, mtree, value, mode)
+
+1.1.  mt_load_api(api)
+
+   The function imports all API functions that are exported by the mtree
+   module (see sections below).
+
+   Meaning of the parameters is as follows:
+     * mtree_api_t* api - mtree API
+
+1.2.  mt_match(msg, mtree, value, mode)
+
+   Match 'value' against 'mtree' using 'mode' (see mt_match function Admin
+   Guide documentation).
+
+   Meaning of the parameters is as follows:
+     * sip_msg_t *msg - SIP Request
+     * str *mtree - Name of mtree
+     * str *value - Value to match
+     * int mode - Match mode

@@ -89,7 +89,7 @@ function ksr_route_relay()
 	// - serial forking, RTP relaying handling, a.s.o.
 	var METHOD = KSR.pv.get("$rm");
 	if (METHOD=="INVITE" || METHOD=="BYE" || METHOD=="SUBSCRIBE"
-			|| METHOD="UPDATE") {
+			|| METHOD=="UPDATE") {
 		if (KSR.tm.t_is_set("branch_route")<0) {
 			KSR.tm.t_on_branch("ksr_branch_manage");
 		}
@@ -102,7 +102,7 @@ function ksr_route_relay()
 
 	if (METHOD=="INVITE") {
 		if (KSR.tm.t_is_set("failure_route")<0) {
-			KSR.tm.t_on_failure("MANAGE_FAILURE");
+			KSR.tm.t_on_failure("ksr_failure_manage");
 		}
 	}
 
@@ -174,7 +174,7 @@ function ksr_route_withindlg()
 			KSR.setflag(FLT_ACC); // do accounting ...
 			KSR.setflag(FLT_ACCFAILED); // ... even if the transaction fails
 		} else if (METHOD=="ACK") {
-			// ACK is forwarded statelessy
+			// ACK is forwarded statelessly
 			ksr_route_natmanage();
 		} else if (METHOD=="NOTIFY") {
 			// Add Record-Route for in-dialog NOTIFY as per RFC 6665.
@@ -335,15 +335,15 @@ function ksr_route_sipout()
 
 	KSR.hdr.append_hf("P-Hint: outbound\r\n");
 	ksr_route_relay();
-	KSR.xexit();;
+	KSR.x.exit();
 }
 
 // Manage outgoing branches
 // equivalent of branch_route[...]{}
 function ksr_branch_manage()
 {
-	KSR.dbg("new branch [" + KSR.pv.get("$T_branch_idx]")
-				+ " to " + KSR.pv.get("$ru") + "\n");
+	KSR.dbg("new branch [" + KSR.pv.get("$T_branch_idx")
+				+ "] to " + KSR.pv.get("$ru") + "\n");
 	ksr_route_natmanage();
 	return;
 }

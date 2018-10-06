@@ -111,6 +111,8 @@ int ul_keepalive_timeout = 0;
 int ul_db_ops_ruid = 1;
 int ul_expires_type = 0;
 int ul_db_raw_fetch_type = 0;
+int ul_rm_expired_delay = 0;
+int ul_version_table = 1;
 
 str ul_xavp_contact_name = {0};
 
@@ -155,6 +157,8 @@ str ulattrs_last_mod_col = str_init(ULATTRS_LAST_MOD_COL);	/*!< Name of column c
 str db_url          = str_init(DEFAULT_DB_URL);	/*!< Database URL */
 int timer_interval  = 60;				/*!< Timer interval in seconds */
 int db_mode         = 0;				/*!< Database sync scheme: 0-no db, 1-write through, 2-write back, 3-only db */
+int db_load         = 1;				/*!< Database load after restart: 1- true, 0- false (only the db_mode allows it) */
+int db_insert_update = 0;				/*!< Database : update on duplicate key instead of error */
 int use_domain      = 0;				/*!< Whether usrloc should use domain part of aor */
 int desc_time_order = 0;				/*!< By default do not enable timestamp ordering */
 int handle_lost_tcp = 0;				/*!< By default do not remove contacts before expiration time */
@@ -173,7 +177,7 @@ unsigned int init_flag = 0;
 db1_con_t* ul_dbh = 0; /* Database connection handle */
 db_func_t ul_dbf;
 
-/* filter on load by server id */
+/* filter on load and during cleanup by server id */
 unsigned int ul_db_srvid = 0;
 
 /*! \brief
@@ -202,6 +206,8 @@ static param_export_t params[] = {
 	{"db_url",              PARAM_STR, &db_url        },
 	{"timer_interval",      INT_PARAM, &timer_interval  },
 	{"db_mode",             INT_PARAM, &db_mode         },
+	{"db_load",             INT_PARAM, &db_load         },
+	{"db_insert_update",    INT_PARAM, &db_insert_update },
 	{"use_domain",          INT_PARAM, &use_domain      },
 	{"desc_time_order",     INT_PARAM, &desc_time_order },
 	{"user_agent_column",   PARAM_STR, &user_agent_col},
@@ -214,7 +220,8 @@ static param_export_t params[] = {
 	{"server_id_column",    PARAM_STR, &srv_id_col    },
 	{"connection_id_column",PARAM_STR, &con_id_col    },
 	{"keepalive_column",    PARAM_STR, &keepalive_col },
-	{"matching_mode",       INT_PARAM, &matching_mode   },
+	{"partition_column",    PARAM_STR, &partition_col },
+	{"matching_mode",       INT_PARAM, &ul_matching_mode },
 	{"cseq_delay",          INT_PARAM, &cseq_delay      },
 	{"fetch_rows",          INT_PARAM, &ul_fetch_rows   },
 	{"hash_size",           INT_PARAM, &ul_hash_size    },
@@ -233,6 +240,8 @@ static param_export_t params[] = {
 	{"db_insert_null",      PARAM_INT, &ul_db_insert_null},
 	{"server_id_filter",    PARAM_INT, &ul_db_srvid},
 	{"db_timer_clean",      PARAM_INT, &ul_db_timer_clean},
+	{"rm_expired_delay",    PARAM_INT, &ul_rm_expired_delay},
+	{"version_table",       PARAM_INT, &ul_version_table},
 	{0, 0, 0}
 };
 
@@ -244,18 +253,16 @@ stat_export_t mod_stats[] = {
 
 
 struct module_exports exports = {
-	"usrloc",
+	"usrloc",        /*!< module name */
 	DEFAULT_DLFLAGS, /*!< dlopen flags */
-	cmds,       /*!< Exported functions */
-	params,     /*!< Export parameters */
-	mod_stats,  /*!< exported statistics */
-	0,          /*!< exported MI functions */
-	0,          /*!< exported pseudo-variables */
-	0,          /*!< extra processes */
-	mod_init,   /*!< Module initialization function */
-	0,          /*!< Response function */
-	destroy,    /*!< Destroy function */
-	child_init  /*!< Child initialization function */
+	cmds,            /*!< exported functions */
+	params,          /*!< exported parameters */
+	0,               /*!< exported rpc functions */
+	0,               /*!< exported pseudo-variables */
+	0,               /*!< response handling function */
+	mod_init,        /*!< module init function */
+	child_init,      /*!< child init function */
+	destroy          /*!< destroy function */
 };
 
 
@@ -267,6 +274,17 @@ static int mod_init(void)
 	int i;
 	udomain_t* d;
 
+	if(ul_rm_expired_delay!=0) {
+		if(db_mode != DB_ONLY) {
+			LM_ERR("rm expired delay feature is available for db only mode\n");
+			return -1;
+		}
+	}
+	if(ul_rm_expired_delay<0) {
+		LM_WARN("rm expired delay value is negative (%d) - setting it to 0\n",
+				ul_rm_expired_delay);
+		ul_rm_expired_delay = 0;
+	}
 	if(sruid_init(&_ul_sruid, '-', "ulcx", SRUID_INC)<0)
 		return -1;
 
@@ -290,14 +308,14 @@ static int mod_init(void)
 		ul_hash_size = 1<<ul_hash_size;
 
 	/* check matching mode */
-	switch (matching_mode) {
+	switch (ul_matching_mode) {
 		case CONTACT_ONLY:
 		case CONTACT_CALLID:
 		case CONTACT_PATH:
 		case CONTACT_CALLID_ONLY:
 			break;
 		default:
-			LM_ERR("invalid matching mode %d\n", matching_mode);
+			LM_ERR("invalid matching mode %d\n", ul_matching_mode);
 	}
 
 	/* Register cache timer */
@@ -405,6 +423,7 @@ static int child_init(int _rank)
 			break;
 		case DB_READONLY:
 			/* connect to db only from child 1 for preload */
+			db_load=1; /* we always load from the db in this mode */
 			if(_rank!=PROC_SIPINIT)
 				return 0;
 			break;
@@ -416,7 +435,7 @@ static int child_init(int _rank)
 		return -1;
 	}
 	/* _rank==PROC_SIPINIT is used even when fork is disabled */
-	if (_rank==PROC_SIPINIT && db_mode!=DB_ONLY) {
+	if (_rank==PROC_SIPINIT && db_mode!=DB_ONLY && db_load) {
 		/* if cache is used, populate domains from DB */
 		for( ptr=root ; ptr ; ptr=ptr->next) {
 			if (preload_udomain(ul_dbh, ptr->d) < 0) {

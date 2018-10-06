@@ -33,6 +33,8 @@
 #include "../../core/route.h"
 #include "../../core/route_struct.h"
 #include "../../core/lvalue.h"
+#include "../../core/cfg/cfg_struct.h"
+
 #include "../tm/tm_load.h"
 
 #include "jsonrpc_io.h"
@@ -156,6 +158,8 @@ void cmd_pipe_cb(int fd, short event, void *arg)
 		return;
 	}
 
+	cfg_update();
+
 	params = json_tokener_parse(cmd->params);
 
 	if (cmd->notify_only) {
@@ -219,6 +223,7 @@ void cmd_pipe_cb(int fd, short event, void *arg)
 		if (timerfd_settime(timerfd, 0, itime, NULL) == -1) 
 		{
 			LM_ERR("Could not set timer.");
+			pkg_free(itime);
 			goto error;
 		}
 		pkg_free(itime);
@@ -429,6 +434,7 @@ int connect_server(struct jsonrpc_server *server)
 	struct sockaddr_in  server_addr;
 	struct hostent      *hp;
 
+	memset(&server_addr, 0, sizeof(struct sockaddr_in));
 	server_addr.sin_family = AF_INET;
 	server_addr.sin_port   = htons(server->port);
 

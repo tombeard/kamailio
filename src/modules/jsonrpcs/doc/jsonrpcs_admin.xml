@@ -16,28 +16,30 @@
 	<section>
 	<title>Overview</title>
 	<para>
-		This module provides a JSON-RPC v2 server over HTTP implementation,
-		tailored for the needs of &kamailio;. It implements the &kamailio;
-		RPC interface over JSON-RPC.
+		This module provides a JSON-RPC v2 server, tailored for the needs of
+		&kamailio;. It implements the &kamailio; RPC interface over JSON-RPC.
 	</para>
 	<para>
 		The specification for JSON-RPC is available at:
 		<ulink url="http://www.jsonrpc.org/specification">http://www.jsonrpc.org/specification</ulink>.
 	</para>
 	<para>
-		The JSONRPC-S module uses the xHTTP module to handle HTTP/S requests.
+		The transports supported by the module are: FIFO file, datagram (UDP)
+		over unix socket files or network sockets, HTTP and HTTPS.
+	</para>
+	<para>
+		The JSONRPCS module requires the xHTTP module to handle HTTP/S requests.
 		Read the documentation of the xHTTP module for more details.
 	</para>
 	</section>
 
 	<section>
-	<title>Limitations</title>
+	<title>Important Remarks</title>
 	<itemizedlist>
 	<listitem>
 	<para>
-		This module does not implement asynchronous RPC commands.
-		It is unlikely that asynchronous RPC commands will be executed
-		from an JSON-RPC over HTTP client.
+		This module implements the support for asynchronous RPC commands only
+		for HTTP and HTTPS transports.
 	</para>
 	</listitem>
 	<listitem>
@@ -47,6 +49,14 @@
 		passed to RPC).
 	</para>
 	</listitem>
+	<listitem>
+	<para>
+		For the RPC interface implemented by &kamailio;, the order of parameters
+		is important. If the parameters are given with names, the names are
+		ignored.
+	</para>
+	</listitem>
+
 	</itemizedlist>
 	</section>
 
@@ -86,18 +96,19 @@
 	<section id="jsonrpcs.p.pretty_format">
 		<title><varname>pretty_format</varname> (int)</title>
 		<para>
-			Pretty format for JSON-RPC response document.
+			Pretty format for JSON-RPC response document if set to 1. To
+			disable, set to 0.
 		</para>
 		<para>
 		<emphasis>
-			Default value is '0'.
+			Default value is '1' (on).
 		</emphasis>
 		</para>
 		<example>
 		<title>Set <varname>pretty_format</varname> parameter</title>
 		<programlisting format="linespecific">
 ...
-modparam("jsonrpcs", "pretty_format", 1)
+modparam("jsonrpcs", "pretty_format", 0)
 ...
 </programlisting>
 		</example>
@@ -367,7 +378,7 @@ modparam("jsonrpcs", "dgram_user", "root")
 		<title><varname>dgram_timeout</varname> (int)</title>
 		<para>
 		The reply will expire after trying to sent it for socket_timeout
-		miliseconds.
+		milliseconds.
 		</para>
 		<para>
 		<emphasis>
@@ -458,7 +469,8 @@ event_route[xhttp:request] {
 		<title><function>jsonrpc_exec</function> usage</title>
 		<programlisting format="linespecific">
 ...
-jsonrpc_exec({"jsonrpc": "2.0", "method": "dispatcher.reload", "id": 1}');
+jsonrpc_exec('{"jsonrpc": "2.0", "method": "dispatcher.reload", "id": 1}');
+xlog("jsonrpc response code: $jsonrpl(code) - the body is: $jsonrpl(body)\n");
 ...
 </programlisting>
 	    </example>
@@ -540,7 +552,7 @@ jsonrpc_exec({"jsonrpc": "2.0", "method": "dispatcher.reload", "id": 1}');
  	<section>
 	    <title>JSONRPC Over FIFO</title>
 	    <para>
-			This module can retrive JSONRPC requests via a local FIFO file. To
+			This module can retrieve JSONRPC requests via a local FIFO file. To
 			enable this feature, 'fifo_name' parameter must be set and
 			'transport' parameter has to be 0 or 2.
 		</para>
@@ -586,7 +598,7 @@ rm /tmp/kamailio_jsonrpc_reply_fifo
  	<section>
 	    <title>JSONRPC Over DATAGRAM</title>
 		<para>
-			This module can retrive JSONRPC requests via a UNIX socket file
+			This module can retrieve JSONRPC requests via a UNIX socket file
 			or UDP IPv4/IPv6 socket. To enable this feature, 'dgram_socket'
 			parameter must be set and 'transport' parameter has to be 0 or 4.
 		</para>

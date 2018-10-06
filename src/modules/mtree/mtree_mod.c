@@ -42,6 +42,7 @@
 #include "../../core/kemi.h"
 
 #include "mtree.h"
+#include "api.h"
 
 MODULE_VERSION
 
@@ -74,7 +75,9 @@ CREATE TABLE mtrees (
 
 /** parameters */
 static str db_url = str_init(DEFAULT_DB_URL);
-static str db_table = str_init("mtrees");
+/* default name created by sql scripts is 'mtrees'
+ * - don't set it here with default value, only via config param */
+static str db_table = str_init("");
 static str tname_column   = str_init("tname");
 static str tprefix_column = str_init("tprefix");
 static str tvalue_column  = str_init("tvalue");
@@ -110,6 +113,7 @@ static int  mod_init(void);
 static void mod_destroy(void);
 static int  child_init(int rank);
 static int mtree_init_rpc(void);
+static int bind_mtree(mtree_api_t* api);
 
 static int mt_match(sip_msg_t *msg, str *tname, str *tomatch,
 		int mval);
@@ -120,6 +124,7 @@ static int mt_load_db_trees();
 static cmd_export_t cmds[]={
 	{"mt_match", (cmd_function)w_mt_match, 3, fixup_mt_match,
 		0, REQUEST_ROUTE|FAILURE_ROUTE|BRANCH_ROUTE|ONREPLY_ROUTE},
+	{"bind_mtree", (cmd_function)bind_mtree, 0, 0, 0},
 	{0, 0, 0, 0, 0, 0}
 };
 
@@ -145,17 +150,15 @@ static param_export_t params[]={
 
 struct module_exports exports = {
 	"mtree",
-	DEFAULT_DLFLAGS, /* dlopen flags */
-	cmds,
-	params,
-	0,
-	0,              /* exported MI functions */
-	0,              /* exported pseudo-variables */
-	0,              /* extra processes */
-	mod_init,       /* module initialization function */
-	0,              /* response function */
-	mod_destroy,    /* destroy function */
-	child_init      /* per child init function */
+	DEFAULT_DLFLAGS,/* dlopen flags */
+	cmds,		/*·exported·functions·*/
+	params,		/*·exported·functions·*/
+	0,		/*·exported·RPC·methods·*/
+	0,		/* exported pseudo-variables */
+	0,		/* response·function */
+	mod_init,	/* module initialization function */
+	child_init,	/* per child init function */
+	mod_destroy	/* destroy function */
 };
 
 
@@ -269,6 +272,9 @@ static int mod_init(void)
 			}
 			pt = pt->next;
 		}
+		/* reset db_table value */
+		db_table.s = "";
+		db_table.len = 0;
 	} else {
 		if(db_table.len<=0)
 		{
@@ -756,16 +762,20 @@ static int mt_load_db_trees()
 		{
 			/* check for NULL values ?!?! */
 			tname.s = (char*)(RES_ROWS(db_res)[i].values[0].val.string_val);
-			tname.len = strlen(tname.s);
-
 			tprefix.s = (char*)(RES_ROWS(db_res)[i].values[1].val.string_val);
-			tprefix.len = strlen(tprefix.s);
-
 			tvalue.s = (char*)(RES_ROWS(db_res)[i].values[2].val.string_val);
+
+			if(tprefix.s==NULL || tvalue.s==NULL || tname.s==NULL)
+			{
+				LM_ERR("Error - null fields in db\n");
+				continue;
+			}
+
+			tname.len = strlen(tname.s);
+			tprefix.len = strlen(tprefix.s);
 			tvalue.len = strlen(tvalue.s);
 
-			if(tprefix.s==NULL || tvalue.s==NULL || tname.s==NULL ||
-					tprefix.len<=0 || tvalue.len<=0 || tname.len<=0)
+			if(tname.len<=0 || tprefix.len<=0 || tvalue.len<=0)
 			{
 				LM_ERR("Error - bad values in db\n");
 				continue;
@@ -918,7 +928,8 @@ static const char* rpc_mtree_summary_doc[2] = {
 void rpc_mtree_reload(rpc_t* rpc, void* c)
 {
 	str tname = {0, 0};
-	m_tree_t *pt;
+	m_tree_t *pt = NULL;
+	int treloaded = 0;
 
 	if(db_table.len>0)
 	{
@@ -937,8 +948,13 @@ void rpc_mtree_reload(rpc_t* rpc, void* c)
 
 		/* read tree name */
 		if (rpc->scan(c, "S", &tname) != 1) {
-			rpc->fault(c, 500, "Failed to get table name parameter");
-			return;
+			tname.s = 0;
+			tname.len = 0;
+		} else {
+			if(*tname.s=='.') {
+				tname.s = 0;
+				tname.len = 0;
+			}
 		}
 
 		pt = mt_get_first_tree();
@@ -955,8 +971,12 @@ void rpc_mtree_reload(rpc_t* rpc, void* c)
 					LM_ERR("cannot re-load mtree from database\n");
 					goto error;
 				}
+				treloaded = 1;
 			}
 			pt = pt->next;
+		}
+		if(treloaded == 0) {
+			rpc->fault(c, 500, "No Mtree Name Matching");
 		}
 	}
 
@@ -1185,6 +1205,22 @@ static sr_kemi_t sr_kemi_mtree_exports[] = {
 
 	{ {0, 0}, {0, 0}, 0, NULL, { 0, 0, 0, 0, 0, 0 } }
 };
+
+
+/**
+ * load mtree module API
+ */
+static int bind_mtree(mtree_api_t* api)
+{
+	if (!api) {
+		LM_ERR("Invalid parameter value\n");
+		return -1;
+	}
+	api->mt_match = mt_match;
+
+	return 0;
+}
+
 
 /**
  *

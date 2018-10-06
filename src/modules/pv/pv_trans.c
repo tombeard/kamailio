@@ -39,6 +39,7 @@
 #include "../../core/dset.h"
 #include "../../core/basex.h"
 #include "../../core/action.h"
+#include "../../core/hashes.h"
 
 #include "../../core/parser/parse_param.h"
 #include "../../core/parser/parse_uri.h"
@@ -50,15 +51,15 @@
 #include "pv_trans.h"
 
 
-static char _empty_str[] = "";
-static str _tr_empty = { _empty_str, 0 };
+static char _tr_empty_buf[2] = {0};
+static str _tr_empty = { _tr_empty_buf, 0 };
 static str _tr_uri = {0, 0};
 static struct sip_uri _tr_parsed_uri;
 static param_t* _tr_uri_params = NULL;
 
 /*! transformation buffer size */
 #define TR_BUFFER_SIZE 65536
-#define TR_BUFFER_SLOTS	4
+#define TR_BUFFER_SLOTS	8
 
 /*! transformation buffer */
 static char **_tr_buffer_list = NULL;
@@ -265,6 +266,7 @@ int tr_eval_string(struct sip_msg *msg, tr_param_t *tp, int subtype,
 	str st, st2;
 	pv_value_t v, w;
 	time_t t;
+	uint32_t sz1, sz2;
 
 	if(val==NULL || val->flags&PV_VAL_NULL)
 		return -1;
@@ -412,6 +414,30 @@ int tr_eval_string(struct sip_msg *msg, tr_param_t *tp, int subtype,
 			val->flags = PV_VAL_STR;
 			val->rs.s = _tr_buffer;
 			val->rs.len = i;
+			break;
+		case TR_S_ENCODEBASE58:
+			if(!(val->flags&PV_VAL_STR))
+				val->rs.s = int2str(val->ri, &val->rs.len);
+			st.len = TR_BUFFER_SIZE-1;
+			st.s = b58_encode(_tr_buffer, &st.len, val->rs.s, val->rs.len);
+			if (st.s==NULL)
+				return -1;
+			memset(val, 0, sizeof(pv_value_t));
+			val->flags = PV_VAL_STR;
+			val->rs.s = st.s;
+			val->rs.len = st.len;
+			break;
+		case TR_S_DECODEBASE58:
+			if(!(val->flags&PV_VAL_STR))
+				val->rs.s = int2str(val->ri, &val->rs.len);
+			st.len = TR_BUFFER_SIZE-1;
+			st.s = b58_decode(_tr_buffer, &st.len, val->rs.s, val->rs.len);
+			if (st.s==NULL)
+				return -1;
+			memset(val, 0, sizeof(pv_value_t));
+			val->flags = PV_VAL_STR;
+			val->rs.s = st.s;
+			val->rs.len = st.len;
 			break;
 		case TR_S_ENCODEBASE64:
 			if(!(val->flags&PV_VAL_STR))
@@ -1097,6 +1123,89 @@ int tr_eval_string(struct sip_msg *msg, tr_param_t *tp, int subtype,
 			val->rs = st;
 			break;
 
+		case TR_S_COREHASH:
+			if(!(val->flags&PV_VAL_STR))
+				st.s = int2str(val->ri, &st.len);
+			else
+				st = val->rs;
+
+			sz1 = 0;
+			if(tp != NULL) {
+				if(tp->type==TR_PARAM_NUMBER) {
+						sz1 = (uint) tp->v.n;
+				} else {
+					if(pv_get_spec_value(msg, (pv_spec_p)tp->v.data, &v)!=0
+							|| (!(v.flags&PV_VAL_INT)))
+					{
+							LM_ERR("corehash cannot get size (cfg line: %d)\n",
+								get_cfg_crt_line());
+						return -1;
+					}
+					sz1  = (uint) v.ri;
+				}
+			}
+
+			sz2 = core_hash(&st, NULL, sz1);
+
+			if((val->rs.s = int2strbuf((unsigned long)sz2, _tr_buffer,
+						INT2STR_MAX_LEN, &val->rs.len))==NULL) {
+				LM_ERR("failed to convert core hash id to string\n");
+				return -1;
+			}
+			val->flags = PV_VAL_STR;
+			val->ri = 0;
+			break;
+
+		case TR_S_UNQUOTE:
+			if(!(val->flags&PV_VAL_STR)) {
+				val->rs.s = int2str(val->ri, &val->rs.len);
+				break;
+			}
+			if(val->rs.len<2) {
+				break;
+			}
+			if(val->rs.len>TR_BUFFER_SIZE-2) {
+				LM_ERR("value too large: %d\n", val->rs.len);
+				return -1;
+			}
+			if((val->rs.s[0] == val->rs.s[val->rs.len-1])
+					&& (val->rs.s[0] == '"' || val->rs.s[0] == '\'')) {
+				memcpy(_tr_buffer, val->rs.s+1, val->rs.len-2);
+				val->rs.len -= 2;
+			} else {
+				memcpy(_tr_buffer, val->rs.s, val->rs.len);
+			}
+			val->flags = PV_VAL_STR;
+			val->rs.s = _tr_buffer;
+			val->rs.s[val->rs.len] = '\0';
+			break;
+
+		case TR_S_UNBRACKET:
+			if(!(val->flags&PV_VAL_STR)) {
+				val->rs.s = int2str(val->ri, &val->rs.len);
+				break;
+			}
+			if(val->rs.len<2) {
+				break;
+			}
+			if(val->rs.len>TR_BUFFER_SIZE-2) {
+				LM_ERR("value too large: %d\n", val->rs.len);
+				return -1;
+			}
+			if((val->rs.s[0] == '(' && val->rs.s[val->rs.len-1] == ')')
+					|| (val->rs.s[0] == '[' && val->rs.s[val->rs.len-1] == ']')
+					|| (val->rs.s[0] == '{' && val->rs.s[val->rs.len-1] == '}')
+					|| (val->rs.s[0] == '<' && val->rs.s[val->rs.len-1] == '>')) {
+				memcpy(_tr_buffer, val->rs.s+1, val->rs.len-2);
+				val->rs.len -= 2;
+			} else {
+				memcpy(_tr_buffer, val->rs.s, val->rs.len);
+			}
+			val->flags = PV_VAL_STR;
+			val->rs.s = _tr_buffer;
+			val->rs.s[val->rs.len] = '\0';
+			break;
+
 		default:
 			LM_ERR("unknown subtype %d (cfg line: %d)\n",
 					subtype, get_cfg_crt_line());
@@ -1121,6 +1230,7 @@ int tr_eval_uri(struct sip_msg *msg, tr_param_t *tp, int subtype,
 	str sv;
 	param_hooks_t phooks;
 	param_t *pit=NULL;
+	str sproto;
 
 	if(val==NULL || (!(val->flags&PV_VAL_STR)) || val->rs.len<=0)
 		return -1;
@@ -1268,6 +1378,41 @@ int tr_eval_uri(struct sip_msg *msg, tr_param_t *tp, int subtype,
 			val->rs = (_tr_parsed_uri.r2_val.s)?
 				_tr_parsed_uri.r2_val:_tr_empty;
 			break;
+		case TR_URI_SCHEME:
+			val->rs.s = _tr_uri.s;
+			val->rs.len = 0;
+			while(val->rs.len<_tr_uri.len) {
+				if(_tr_uri.s[val->rs.len]==':') {
+					break;
+				}
+				val->rs.len++;
+			}
+			break;
+		case TR_URI_TOSOCKET:
+			if(msg==NULL) {
+				val->rs = _tr_empty;
+				break;
+			} else {
+				if(get_valid_proto_string(msg->rcv.proto, 1, 0, &sproto)<0) {
+					LM_WARN("unknown transport protocol\n");
+					val->rs = _tr_empty;
+					break;
+				}
+				tr_set_crt_buffer();
+				val->rs.len = snprintf(_tr_buffer, TR_BUFFER_SIZE,
+						"%.*s:%.*s:%d", sproto.len, sproto.s,
+						_tr_parsed_uri.host.len, _tr_parsed_uri.host.s,
+						(_tr_parsed_uri.port_no!=0)
+								?(int)_tr_parsed_uri.port_no:5060);
+				if(val->rs.len<=0 || val->rs.len>=TR_BUFFER_SIZE) {
+					LM_WARN("error converting uri to socket address [%.*s]\n",
+							_tr_uri.len, _tr_uri.s);
+					val->rs = _tr_empty;
+					break;
+				}
+				val->rs.s = _tr_buffer;
+			}
+			break;
 		default:
 			LM_ERR("unknown subtype %d\n",
 					subtype);
@@ -1294,6 +1439,7 @@ int tr_eval_paramlist(struct sip_msg *msg, tr_param_t *tp, int subtype,
 		pv_value_t *val)
 {
 	pv_value_t v;
+	pv_value_t vs;
 	str sv;
 	int n, i;
 	char separator = ';';
@@ -1307,17 +1453,23 @@ int tr_eval_paramlist(struct sip_msg *msg, tr_param_t *tp, int subtype,
 	{
 		if (subtype == TR_PL_COUNT)
 		{
-			if(tp->type != TR_PARAM_STRING || tp->v.s.len != 1)
-				return -1;
-
-			separator = tp->v.s.s[0];
-		}
-		else if (tp->next != NULL)
-		{
+			if(tp->type != TR_PARAM_STRING) {
+				if(pv_get_spec_value(msg, (pv_spec_t*)tp->v.data, &vs)!=0
+						|| (!(vs.flags&PV_VAL_STR)) || vs.rs.len<=0)
+				{
+					LM_ERR("value cannot get p1\n");
+					return -1;
+				}
+				separator = vs.rs.s[0];
+			} else {
+				if(tp->v.s.len != 1)
+					return -1;
+				separator = tp->v.s.s[0];
+			}
+		} else if (tp->next != NULL) {
 			if(tp->next->type != TR_PARAM_STRING
 					|| tp->next->v.s.len != 1)
 				return -1;
-
 			separator = tp->next->v.s.s[0];
 		}
 	}
@@ -2104,6 +2256,12 @@ char* tr_parse_string(str* in, trans_t *t)
 	} else if(name.len==11 && strncasecmp(name.s, "decode.7bit", 11)==0) {
 		t->subtype = TR_S_DECODE7BIT;
 		goto done;
+	} else if(name.len==13 && strncasecmp(name.s, "encode.base58", 13)==0) {
+		t->subtype = TR_S_ENCODEBASE58;
+		goto done;
+	} else if(name.len==13 && strncasecmp(name.s, "decode.base58", 13)==0) {
+		t->subtype = TR_S_DECODEBASE58;
+		goto done;
 	} else if(name.len==13 && strncasecmp(name.s, "encode.base64", 13)==0) {
 		t->subtype = TR_S_ENCODEBASE64;
 		goto done;
@@ -2348,6 +2506,23 @@ char* tr_parse_string(str* in, trans_t *t)
 			goto error;
 		}
 		goto done;
+	} else if(name.len==8 && strncasecmp(name.s, "corehash", 8)==0) {
+		t->subtype = TR_S_COREHASH;
+		if(*p==TR_PARAM_MARKER)
+		{
+			p++;
+			_tr_parse_nparam(p, p0, tp, spec, n, sign, in, s);
+			t->params = tp;
+		}
+		tp = 0;
+		while(*p && (*p==' ' || *p=='\t' || *p=='\n')) p++;
+		if(*p!=TR_RBRACKET)
+		{
+			LM_ERR("invalid corehash transformation: %.*s!!\n",
+					in->len, in->s);
+			goto error;
+		}
+		goto done;
 	} else if(name.len==4 && strncasecmp(name.s, "trim", 4)==0) {
 		t->subtype = TR_S_TRIM;
 		goto done;
@@ -2382,6 +2557,12 @@ char* tr_parse_string(str* in, trans_t *t)
 		goto done;
 	} else if(name.len==15 && strncasecmp(name.s, "urldecode.param", 15)==0) {
 		t->subtype = TR_S_URLDECODEPARAM;
+		goto done;
+	} else if(name.len==7 && strncasecmp(name.s, "unquote", 7)==0) {
+		t->subtype = TR_S_UNQUOTE;
+		goto done;
+	} else if(name.len==9 && strncasecmp(name.s, "unbracket", 9)==0) {
+		t->subtype = TR_S_UNBRACKET;
 		goto done;
 	}
 
@@ -2492,16 +2673,21 @@ char* tr_parse_uri(str* in, trans_t *t)
 	} else if(name.len==2 && strncasecmp(name.s, "r2", 2)==0) {
 		t->subtype = TR_URI_R2;
 		goto done;
+	} else if(name.len==6 && strncasecmp(name.s, "scheme", 6)==0) {
+		t->subtype = TR_URI_SCHEME;
+		goto done;
+	} else if(name.len==6 && strncasecmp(name.s, "tosocket", 8)==0) {
+		t->subtype = TR_URI_TOSOCKET;
+		goto done;
 	}
 
 	LM_ERR("unknown transformation: %.*s/%.*s!\n", in->len,
 			in->s, name.len, name.s);
 error:
-	if(tp)
-		tr_param_free(tp);
 	if(spec)
 		pv_spec_free(spec);
 	return NULL;
+
 done:
 	t->name = name;
 	return p;
@@ -2662,13 +2848,13 @@ char* tr_parse_paramlist(str* in, trans_t *t)
 			start_pos = ++p;
 			_tr_parse_sparam(p, p0, tp, spec, ps, in, s);
 			t->params = tp;
-			tp = 0;
-			if (p - start_pos != 1)
+			if (tp->type != TR_PARAM_SPEC && p - start_pos != 1)
 			{
 				LM_ERR("invalid separator in transformation: "
 						"%.*s\n", in->len, in->s);
 				goto error;
 			}
+			tp = 0;
 
 			while(*p && (*p==' ' || *p=='\t' || *p=='\n')) p++;
 			if(*p!=TR_RBRACKET)
